@@ -1,6 +1,6 @@
 {
   "name": "ship-band",
-  "version": "0.3.0",
+  "version": "0.4.0",
   "description": "A band above the prompt where Claude asks before it commits, tests, deploys, releases or installs on a device, with modes you can add: answer with Yes or No.",
   "author": { "name": "Azzam", "url": "https://github.com/Azzam" },
   "homepage": "https://github.com/Azzam/claude-ship-band",

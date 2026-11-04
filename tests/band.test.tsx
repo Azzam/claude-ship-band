@@ -31,9 +31,10 @@ const engine = (on: On, sent: string[] = []) => {
 }
 const origins: string[] = []
 
-test('Yes and No turn the buttons into a report; the person\'s next message clears it', async ($, on) => {
+test('answering moves a step into the session strip; open rows keep their buttons', async ($, on) => {
   const sent: string[] = []
   engine(on, sent)
+  mock.clock(on)
 
   await $.session.start({ cwd: '/', surface: 'desktop', isInteractive: true })
   const r = await $.tool.call({
@@ -47,40 +48,52 @@ test('Yes and No turn the buttons into a report; the person\'s next message clea
   })
   expect(JSON.stringify(r)).toContain('Shown 3 row')
 
-  for (const surface of ['terminal', 'desktop'] as const) {
-    const ui = await $.ui.mount({ ...BAND, surface })
-    expect((await ui.find({ type: 'Text', text: /my-app/ }))?.text).toContain('commit')
-    expect((await ui.find({ type: 'Text', text: /3 files on main/ }))?.text).toBe('3 files on main')
-    expect((await ui.find({ type: 'Text', text: /iPhone/ }))?.text).toContain('install')
-    expect((await ui.find({ type: 'Text', text: /web tests/ }))?.text).toContain('verify')
-    if (surface === 'desktop') expect(await ui.find({ type: 'Svg' })).toBeDefined()
-    expect(await ui.find({ type: 'Text', text: /dropped/ })).toBeUndefined()
-    await ui.unmount()
-  }
-
   const ui = await $.ui.mount({ ...BAND, surface: 'desktop' })
+  expect(await ui.find({ type: 'Text', text: /This session/ })).toBeUndefined()
   await ui.press({ key: 'y-0:commit:my-app' })
   await ui.press({ key: 'n-1:device:iPhone · Debug' })
-  expect(sent[0]).toBe('Yes, go ahead: commit my-app (3 files on main)')
-  expect(sent.length).toBe(1)
+  expect(sent).toEqual(['Yes, go ahead: commit my-app (3 files on main)'])
+  expect(origins).toEqual(['plugin'])
 
-  // Answered rows stay, with a report and no buttons; the open row keeps its own.
-  expect((await ui.find({ type: 'Text', text: /sent to Claude/ }))?.text).toBe('✓ Yes · commit sent to Claude')
-  expect((await ui.find({ type: 'Text', text: /skipped/ }))?.text).toBe('✕ No · skipped')
-  expect((await ui.find({ type: 'Text', text: /iPhone/ }))?.text).toContain('install')
-  expect(await ui.find({ key: 'y-0:commit:my-app' })).toBeUndefined()
-  expect(await ui.find({ key: 'n-1:device:iPhone · Debug' })).toBeUndefined()
+  // The open row keeps its two buttons; the answered ones sit in the strip.
   expect(await ui.findAll({ type: 'Button' })).toHaveLength(2)
+  expect((await ui.find({ type: 'Text', text: /web tests/ }))?.text).toContain('verify')
+  expect(await ui.find({ type: 'Text', text: /This session/ })).toBeDefined()
+  expect((await ui.find({ type: 'Text', text: /✓ 1/ }))?.text).toBe('✓ 1  ✕ 1')
+  expect(await ui.find({ type: 'Text', text: /^my-app$/ })).toBeDefined()
+  expect(await ui.find({ type: 'Text', text: /^iPhone · Debug$/ })).toBeDefined()
+  expect(await ui.find({ type: 'Text', text: /^install$/ })).toBeDefined()
+  // One tile for the open row, one badged tile per answered step.
+  expect(await ui.findAll({ type: 'Svg' })).toHaveLength(3)
   await ui.unmount()
 
-  // The mod's own Yes message did not clear them; the person's next message does.
-  await $.prompt.submit({ text: 'thanks', asUser: true })
-  const after = await $.ui.mount({ ...BAND, surface: 'desktop' })
-  expect(origins).toEqual(['plugin', 'none'])
-  expect(await after.find({ type: 'Text', text: /my-app/ })).toBeUndefined()
-  expect(await after.find({ type: 'Text', text: /iPhone/ })).toBeUndefined()
-  expect((await after.find({ type: 'Text', text: /web tests/ }))?.text).toContain('verify')
-  await after.unmount()
+  // A new offer replaces the open rows only; the strip stays.
+  await $.tool.call({ tool: 'mcp__ship-band__offer_actions', actions: [] })
+  const term = await $.ui.mount({ ...BAND, surface: 'terminal' })
+  expect(await term.findAll({ type: 'Button' })).toHaveLength(0)
+  expect((await term.find({ type: 'Text', text: /✓ 1/ }))?.text).toBe('✓ 1  ✕ 1')
+  expect(await term.find({ type: 'Text', text: /^my-app$/ })).toBeDefined()
+  await term.unmount()
+})
+
+test('the strip shows the newest 5 and counts the rest as earlier', async ($, on) => {
+  engine(on)
+  mock.clock(on)
+  await $.session.start({ cwd: '/', surface: 'desktop', isInteractive: true })
+  await $.tool.call({
+    tool: 'mcp__ship-band__offer_actions',
+    actions: ['a', 'b', 'c', 'd', 'e', 'f'].map(t => ({ kind: 'run', title: `job-${t}` })),
+  })
+  const ui = await $.ui.mount({ ...BAND, surface: 'desktop' })
+  for (const [i, t] of ['a', 'b', 'c', 'd', 'e', 'f'].entries()) await ui.press({ key: `n-${i}:run:job-${t}` })
+
+  expect((await ui.find({ type: 'Text', text: /✓ 0/ }))?.text).toBe('✓ 0  ✕ 6')
+  expect(await ui.find({ type: 'Text', text: /^earlier$/ })).toBeDefined()
+  expect(await ui.find({ type: 'Text', text: /^job-a$/ })).toBeUndefined()
+  expect(await ui.find({ type: 'Text', text: /^job-f$/ })).toBeDefined()
+  // 5 badged tiles plus the "+1" tile.
+  expect(await ui.findAll({ type: 'Svg' })).toHaveLength(6)
+  await ui.unmount()
 })
 
 test('the person adds a mode and relabels a built-in; bad values fall back', async ($, on) => {

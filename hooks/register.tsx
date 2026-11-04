@@ -1,16 +1,26 @@
 import { atom, read, update } from 'claude-code'
 import type { EngineInterface, Register } from 'claude-code'
 
-import type { Ask } from '../types'
-import { BUILT_IN, FALLBACK, ICONS, merge, NAME, NO, tile, YES } from './modes'
+import type { Ask, Done } from '../types'
+import { badged, BUILT_IN, FALLBACK, ICONS, merge, more, NAME, NO, tile, YES } from './modes'
 import type { Mode } from './modes'
 
+// Open steps. asks-2: answered rows no longer stay here (0.3.0 kept them with an `answer`).
 const asks = atom({ plugin: 'ship-band', key: 'asks' } as const, [], {
-  shape: 'asks-1',
+  shape: 'asks-2',
 })
+// Every answered step of the session, oldest first; the strip shows the newest few.
+const history = atom({ plugin: 'ship-band', key: 'history' } as const, [], {
+  shape: 'history-1',
+})
+const STRIP = 5
 
-// Where a prompt counts as the person's own message.
-const PERSON = new Set(['composer', 'bridge', 'sdk'])
+const short = (s: string, n = 14) => (s.length > n ? `${s.slice(0, n - 1)}…` : s)
+// Local time: the mod's sandbox keeps the machine's time zone.
+const hhmm = (ms: number) => {
+  const d = new Date(ms)
+  return `${String(d.getHours()).padStart(2, '0')}:${String(d.getMinutes()).padStart(2, '0')}`
+}
 
 // Modes the person added or changed, kept across sessions.
 const STORE_KEY = 'modes'
@@ -145,30 +155,21 @@ export const register: Register = on => {
     }
   }).catch(() => ({ deny: 'ship-band could not save the modes.' }))
 
-  // The person's next own message clears the answered rows; the mod's own Yes
-  // message (origin `plugin`) leaves them, so the report stays while Claude works.
-  on('prompt.submit', async ($, e, next) => {
-    // No origin stamped: the person's own, as the engine reads it.
-    const kind = (e.origin as { kind?: string } | undefined)?.kind
-    if (kind === undefined || PERSON.has(kind)) {
-      await update($, asks, l => l.filter(a => !a.answer)).catch(() => undefined)
-    }
-    return next(e)
-  })
-
   on('ui.render', { component: 'AbovePrompt' }, async ($, e, next) => {
     const list = await read($, asks)
+    const done = await read($, history)
 
-    if (e.props.hasSurvey || list.length === 0) {
+    if (e.props.hasSurvey || (list.length === 0 && done.length === 0)) {
       return next(e)
     }
 
     const ui = $.ui.resolve(e)
     const { Box, Button, Text } = ui
-    // A row whose mode was removed since it was offered still draws, plainly.
-    const modeOf = (a: Ask): Mode => modes[a.kind] ?? { label: a.kind, icon: 'zap', color: FALLBACK, hint: '' }
+    // A step whose mode was removed since it was offered still draws, plainly.
+    const modeOf = (kind: string): Mode => modes[kind] ?? { label: kind, icon: 'zap', color: FALLBACK, hint: '' }
+    const svg = 'Svg' in ui
     const icon = (m: Mode) =>
-      'Svg' in ui ? (
+      svg ? (
         <ui.Svg source={tile(m)} alt={m.label} width={32} height={32} />
       ) : (
         // Terminal has no Svg: a coloured dot stands in.
@@ -176,26 +177,35 @@ export const register: Register = on => {
           ●
         </Text>
       )
-    // An answered row keeps its place and swaps its buttons for a report.
-    const answer = (id: string, value: 'yes' | 'no') =>
-      update($, asks, l => l.map(x => (x.id === id ? { ...x, answer: value } : x)))
-    const yes = (a: Ask) => {
-      void answer(a.id, 'yes')
-      void $.prompt.submit({
-        text: `Yes, go ahead: ${modeOf(a).label} ${a.title}${a.detail ? ` (${a.detail})` : ''}`,
-        asUser: true,
-      })
+
+    // Answering moves the step from the open rows into the session strip.
+    const answer = async (a: Ask, value: 'yes' | 'no') => {
+      const at = await $.clock.now()
+      await update($, asks, l => l.filter(x => x.id !== a.id))
+      await update($, history, h =>
+        [...h, { id: `${at}:${a.id}`, kind: a.kind, title: a.title, answer: value, at }].slice(-200),
+      )
+      if (value === 'yes') {
+        await $.prompt.submit({
+          text: `Yes, go ahead: ${modeOf(a.kind).label} ${a.title}${a.detail ? ` (${a.detail})` : ''}`,
+          asUser: true,
+        })
+      }
     }
 
+    const approved = done.filter(d => d.answer === 'yes').length
+    const shown = done.slice(-STRIP)
+    const earlier = done.length - shown.length
+
     return (
-      <Box flexDirection="column" rowGap="sm" paddingX={1}>
+      <Box flexDirection="column" rowGap="md" paddingX={1}>
         {list.map(a => {
-          const m = modeOf(a)
+          const m = modeOf(a.kind)
           return (
             <Box key={a.id} flexDirection="row" alignItems="center" gap="sm">
               <Box flexShrink={0}>{icon(m)}</Box>
               <Box flexDirection="column" flexGrow={1} flexShrink={1}>
-                <Text wrap="truncate-end" dimColor={a.answer === 'no'}>
+                <Text wrap="truncate-end">
                   <Text color={m.color} size="footnote" weight="semibold">
                     {m.label}
                   </Text>
@@ -208,39 +218,92 @@ export const register: Register = on => {
                   </Text>
                 )}
               </Box>
-              {a.answer === 'yes' ? (
-                <Text wrap="truncate-end">
-                  <Text color={YES} bold>
-                    ✓ Yes
-                  </Text>
-                  <Text dimColor>{` · ${m.label} sent to Claude`}</Text>
-                </Text>
-              ) : a.answer === 'no' ? (
-                <Text wrap="truncate-end">
+              <Box flexDirection="row" alignItems="center" gap="xs" flexShrink={0}>
+                <Button key={`n-${a.id}`} label="No" role="dismiss" onPress={() => void answer(a, 'no')}>
                   <Text color={NO} bold>
-                    ✕ No
-                  </Text>
-                  <Text dimColor> · skipped</Text>
-                </Text>
-              ) : (
-                <Box flexDirection="row" alignItems="center" gap="xs" flexShrink={0}>
-                  <Button key={`n-${a.id}`} label="No" role="dismiss" onPress={() => void answer(a.id, 'no')}>
-                    <Text color={NO} bold>
-                      ✕
-                    </Text>{' '}
-                    No
-                  </Button>
-                  <Button key={`y-${a.id}`} label="Yes" onPress={() => yes(a)}>
-                    <Text color={YES} bold>
-                      ✓
-                    </Text>{' '}
-                    Yes
-                  </Button>
-                </Box>
-              )}
+                    ✕
+                  </Text>{' '}
+                  No
+                </Button>
+                <Button key={`y-${a.id}`} label="Yes" onPress={() => void answer(a, 'yes')}>
+                  <Text color={YES} bold>
+                    ✓
+                  </Text>{' '}
+                  Yes
+                </Button>
+              </Box>
             </Box>
           )
         })}
+
+        {done.length > 0 && (
+          <Box key="strip" flexDirection="row" alignItems="flex-start" gap="md">
+            <Box flexDirection="column" flexShrink={0}>
+              <Text size="footnote" weight="semibold">
+                This session
+              </Text>
+              <Text size="footnote" weight="semibold">
+                <Text color={YES}>{`✓ ${approved}`}</Text>
+                {'  '}
+                <Text color={NO}>{`✕ ${done.length - approved}`}</Text>
+              </Text>
+            </Box>
+            <Box flexDirection="row" flexWrap="wrap" alignItems="flex-start" gap="md">
+              {earlier > 0 && (
+                <Box key="earlier" flexDirection="column" alignItems="center">
+                  {svg ? (
+                    <ui.Svg source={more(earlier)} alt={`${earlier} earlier`} width={36} height={36} />
+                  ) : (
+                    <Text dimColor>{`+${earlier}`}</Text>
+                  )}
+                  <Text size="caption" dimColor>
+                    earlier
+                  </Text>
+                </Box>
+              )}
+              {shown.map(d => {
+                const m = modeOf(d.kind)
+                const skipped = d.answer === 'no'
+                return (
+                  <Box key={d.id} flexDirection="column" alignItems="center">
+                    {svg ? (
+                      <ui.Svg
+                        source={badged(m, d.answer)}
+                        alt={`${m.label} ${d.title}: ${skipped ? 'no' : 'yes'}`}
+                        width={36}
+                        height={36}
+                      />
+                    ) : (
+                      <Text>
+                        <Text color={m.color} bold>
+                          ●
+                        </Text>
+                        <Text color={skipped ? NO : YES} bold>
+                          {skipped ? '✕' : '✓'}
+                        </Text>
+                      </Text>
+                    )}
+                    {skipped ? (
+                      <Text size="caption" dimColor>
+                        {m.label}
+                      </Text>
+                    ) : (
+                      <Text size="caption" weight="semibold" color={m.color}>
+                        {m.label}
+                      </Text>
+                    )}
+                    <Text size="caption" weight="medium" dimColor={skipped}>
+                      {short(d.title)}
+                    </Text>
+                    <Text size="caption" dimColor>
+                      {hhmm(d.at)}
+                    </Text>
+                  </Box>
+                )
+              })}
+            </Box>
+          </Box>
+        )}
       </Box>
     )
   })

@@ -1,27 +1,42 @@
 <h1 align="center">ship-band</h1>
 
-<p align="center">A Claude Code mod: Claude asks before it commits, tests, deploys, releases or installs on a device,<br>and you answer from a band above the prompt with <b>✓ Yes</b> or <b>✕ No</b>.</p>
+<p align="center">A Claude Code mod that turns proposed actions into Yes/No buttons above the prompt.</p>
 
 ---
 
-When Claude finishes work that leaves a step for you to approve, it puts each step in a row above the prompt instead of asking in a paragraph:
+When Claude finishes work that needs a commit, a push, a pull request, a deploy, a release or an install on a phone, it proposes each step as a row above the prompt instead of asking in a paragraph. You answer with **✓ Yes** or **✕ No**, and every answer goes into a report of the session.
 
 **Light**
 
-![ship-band in light mode: an open verify step with No and Yes buttons, and below it the session strip of answered steps, each icon badged yes or no with its action, target and time](docs/band-light.png)
+![ship-band in light mode: an open verify step with No and Yes buttons, and below it the two-column session report, each step with an icon, a yes, no or ran badge, its action, target, status and time](docs/band-light.png)
 
 **Dark**
 
-![ship-band in dark mode: an open verify step with No and Yes buttons, and below it the session strip of answered steps, each icon badged yes or no with its action, target and time](docs/band-dark.png)
+![ship-band in dark mode: an open verify step with No and Yes buttons, and below it the two-column session report, each step with an icon, a yes, no or ran badge, its action, target, status and time](docs/band-dark.png)
 
 <sub>Previews drawn from the mod's own icons and colours; buttons and the prompt box follow your Claude app's own style.</sub>
 
-- **✓ Yes** sends "Yes, go ahead: commit my-app (3 files on main)" as your next message, and Claude runs that step.
-- **✕ No** runs nothing.
-- Once you answer, the step moves into **This session**: one row of icons for the whole session, each with a green ✓ or red ✕ badge and the action, target and time under it. The newest 5 show, older ones are counted as **+N earlier**, and a running count reads **✓ 6 ✕ 2**. A new session starts empty.
-- Nothing runs before you press Yes.
+## What Yes and No do
 
-In the desktop app each row has a drawn icon on a tinted tile. A terminal draws a coloured dot in its place. Yes is always green and No always red, so no mode uses those two colours.
+ship-band is an **approval interface**, not a guard:
+
+- **✓ Yes** sends "Yes, go ahead: commit my-app (3 files on main)" to Claude as your message, and Claude carries out the step.
+- **✕ No** sends nothing. The step is recorded as skipped.
+- The tool's description asks Claude to wait for your Yes before running a step it proposed. The mod does not intercept or block commands: Claude can still run a command it never proposed, as it could without the mod. To enforce approval, use Claude Code's permission settings (allow and ask rules). Steps Claude runs without the panel still show up in the report, marked **ran**.
+
+## The session report
+
+Under the open steps, **This session** lists what happened, in two columns:
+
+| Badge | Status | Meaning |
+| --- | --- | --- |
+| green ✓ | approved | You pressed Yes. |
+| red ✕ | skipped | You pressed No. The icon is faded. |
+| grey ✓ | ran | Claude ran it without the panel (a successful `git commit`, `git push`, `gh pr create` or `merge`, `gh release create`, a publish, a deploy, a device install or a migration). |
+
+Each item shows the action in its mode's colour, the target, the status and the time. The header counts all of them, for example **This session ✓ 4 ✕ 1 · 3 ran · +2 earlier**. The newest 6 show; older ones are counted as **earlier**. A terminal, which draws no pictures, shows a coloured dot with ✓ or ✕ in place of each icon.
+
+The report is kept per session. Reopen or resume a session and its report comes back: your answers are saved, and what Claude ran is rebuilt from that session's own transcript. Steps found only in the transcript have no time, because the transcript records none.
 
 ## Modes
 
@@ -39,18 +54,28 @@ In the desktop app each row has a drawn icon on a tinted tile. A terminal draws 
 | ![migrate](docs/modes/migrate.svg) | `migrate` | migrate | run a database migration |
 | ![run](docs/modes/run.svg) | `run` | run | run a script, job or command |
 
-### Add or change modes
+`verify` and `run` are offered as rows but never auto-detected as **ran**: tests and scripts run too often.
 
-Ask Claude in plain words. It saves the change for you, and it stays across sessions:
+## Customize
+
+Ask Claude in plain words. Changes are saved and kept across sessions.
+
+**Modes**, the rows and the report items:
 
 - "Add a ship-band mode called translate, globe icon, pink, for updating locale files."
-- "Rename the commit mode to save."
-- "Make deploy red-orange: #ea580c."
+- "Rename the commit mode to save." / "Make deploy #ea580c."
+- "Make deploy also match `./deploy.sh`, so the report counts it when Claude runs it."
 - "Remove the translate mode." Removing a built-in you changed puts it back to its default.
 
-Each mode has a **name** (lowercase letters, digits, `-`), a **label** (the word shown), an **icon**, a **colour** (`#rrggbb`) and a **hint** that tells Claude when to use it. A bad icon or colour falls back to a lightning bolt in slate grey.
+Each mode has a **name** (lowercase letters, digits, `-`), a **label** (the word shown), an **icon**, a **colour** (`#rrggbb`), a **hint** that tells Claude when to use it, and an optional **match**: a regular expression for a shell command that does this step. A bad icon or colour falls back to a lightning bolt in slate grey; a bad match is ignored.
 
 Icons: `commit`, `upload`, `pull-request`, `merge`, `shield-check`, `rocket`, `tag`, `package`, `smartphone`, `database`, `play`, `zap`, `globe`, `terminal`, `send`, `trash`, `refresh`.
+
+**The report**:
+
+- "Show 10 steps in the ship-band report." (2 to 12, default 6)
+- "Use one column for the report." (1 or 2, default 2)
+- "Turn off ship-band auto-detect." Only your Yes and No answers are reported then.
 
 ## Install
 
@@ -70,19 +95,27 @@ claude plugin install ship-band --marketplace Azzam/claude-ship-band
 
 In the Claude desktop app, where `/plugin` does not run: click **+** next to the prompt box, then **Plugins**, **Add marketplace** with `Azzam/claude-ship-band`, then **Add plugin**. A mod installed from a terminal at the user scope also loads in the desktop app's local sessions.
 
-Requires a Claude Code build with mod (function hook) support; this one was built and tested on 2.1.317. The mod API is early access and may change between releases.
+Update with `claude plugin update ship-band@claude-ship-band`, then start a new session.
+
+Requires a Claude Code build with mod (function hook) support; built and tested on 2.1.317. The mod API is early access and may change between releases.
 
 ## How it works
 
 | Part | What it does |
 | --- | --- |
-| [`hooks/modes.ts`](hooks/modes.ts) | The built-in modes, the icon set, and the checks every saved mode passes before it is drawn. |
-| `offer_actions` tool | `mcp__ship-band__offer_actions`. Claude calls it with up to 6 rows: `kind` (a mode), a `title` naming only the target, a short `detail`. Each call replaces the rows; an empty list clears them. |
-| `edit_modes` tool | `mcp__ship-band__edit_modes`. Claude calls it only when you ask to add, change or remove a mode. Modes are kept in the mod's own store. |
-| Band | A `ui.render` hook on `AbovePrompt` in [`hooks/register.tsx`](hooks/register.tsx) draws the rows, and gives way to surveys and to an empty list. |
-| Yes / No | Yes submits the step as your message. Both move the step into the session strip with the time (`$.clock`). Open steps and the strip live in session state, so they survive a reload of the mod; a new offer replaces only the open steps. |
+| [`hooks/register.tsx`](hooks/register.tsx) | The hooks: the band, both tools, the Bash watcher, saving and rebuilding the report. |
+| [`hooks/modes.ts`](hooks/modes.ts) | Built-in modes, the icon set, the badges, and the checks every saved mode passes before it is drawn. |
+| [`hooks/detect.ts`](hooks/detect.ts) | Finds shipping steps in a shell command. Quoted text (commit messages, `echo`) never counts. |
+| `offer_actions` tool | `mcp__ship-band__offer_actions`. Claude calls it with up to 6 rows: `kind` (a mode), a `title` naming only the target, a short `detail`. Each call replaces the open rows; the report stays. |
+| `edit_modes` tool | `mcp__ship-band__edit_modes`. Claude calls it only when you ask to change modes or report settings. |
+| Bash watcher | A `tool.call` hook on Bash: after a command succeeds, a shipping step it contains joins the report, or completes the approved step of the same kind. |
+| Band | A `ui.render` hook on `AbovePrompt` draws the open rows and the report, and gives way to surveys. |
 
-The mod reads no files, runs no commands and makes no network calls. Claude does the work itself, only after your Yes.
+## Data and privacy
+
+- **Stored on your machine**, in the mod's own Claude Code store: your modes, the report settings, and each session's answers and detected steps, keyed by session id, for the newest 50 sessions.
+- **Read on your machine**: the current session's transcript, when a session starts, to rebuild its report.
+- **Never**: network calls, model calls, or running commands. Building the report costs no tokens. The only token cost is the `offer_actions` tool description, sent with each request like any tool's.
 
 ## Develop
 

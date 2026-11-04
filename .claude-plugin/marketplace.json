@@ -1,12 +1,15 @@
 {
   "name": "claude-ship-band",
-  "owner": { "name": "Azzam", "url": "https://github.com/Azzam" },
-  "description": "ship-band, a Claude Code mod: approve commits, tests, deploys, releases and device installs with Yes or No above the prompt, with modes you can add.",
+  "owner": {
+    "name": "Azzam",
+    "url": "https://github.com/Azzam"
+  },
+  "description": "A Claude Code mod that turns proposed actions into Yes/No buttons above the prompt.",
   "plugins": [
     {
       "name": "ship-band",
       "source": "./",
-      "description": "A band above the prompt where Claude asks before it commits, tests, deploys, releases or installs on a device, with modes you can add: answer with Yes or No."
+      "description": "A Claude Code mod that turns proposed actions into Yes/No buttons above the prompt."
     }
   ]
 }

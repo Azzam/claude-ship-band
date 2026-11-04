@@ -2,7 +2,8 @@ import { atom, read, update } from 'claude-code'
 import type { EngineInterface, Register } from 'claude-code'
 
 import type { Ask, Done } from '../types'
-import { badged, BUILT_IN, FALLBACK, ICONS, merge, more, NAME, NO, tile, YES } from './modes'
+import { detect } from './detect'
+import { badged, BUILT_IN, FALLBACK, ICONS, merge, NAME, NO, tile, YES } from './modes'
 import type { Mode } from './modes'
 
 // Open steps. asks-2: answered rows no longer stay here (0.3.0 kept them with an `answer`).
@@ -13,9 +14,6 @@ const asks = atom({ plugin: 'ship-band', key: 'asks' } as const, [], {
 const history = atom({ plugin: 'ship-band', key: 'history' } as const, [], {
   shape: 'history-1',
 })
-const STRIP = 5
-
-const short = (s: string, n = 14) => (s.length > n ? `${s.slice(0, n - 1)}…` : s)
 // Local time: the mod's sandbox keeps the machine's time zone.
 const hhmm = (ms: number) => {
   const d = new Date(ms)
@@ -36,18 +34,108 @@ const describe = (modes: Record<string, Mode>) =>
 
 const EDIT =
   'Add, change or remove ship-band modes (the kinds of step offer_actions can show). Call only when the person asks. ' +
-  'add: each {name (lowercase, a-z 0-9 -), label (the verb shown), icon, color (#rrggbb), hint (when to use it)}; giving a built-in name changes that built-in. ' +
+  'add: each {name (lowercase, a-z 0-9 -), label (the verb shown), icon, color (#rrggbb), hint (when to use it), match (optional regex for a shell command that does this step, such as "\\./deploy\\.sh", so the session report counts it when Claude runs it)}; giving a built-in name changes that built-in. ' +
   'remove: names; a removed built-in goes back to its default. ' +
   `Built-ins: ${Object.keys(BUILT_IN).join(', ')}. Icons: ${Object.keys(ICONS).join(', ')}. ` +
-  'Kept across sessions. Returns the modes now in use.'
+  'settings: {show (2-12 steps in the session report, default 6), columns (1 or 2, default 2), detect (true: also report commits, pushes, PRs, deploys Claude ran without the panel; default true)}. ' +
+  'Kept across sessions. Returns the modes and settings now in use.'
 
 // Reset on each load of the module; session.start fills it from the store.
 let modes: Record<string, Mode> = { ...BUILT_IN }
+
+// The session report's own settings, kept across sessions like the modes.
+type Settings = { show: number; columns: 1 | 2; detect: boolean }
+const DEFAULTS: Settings = { show: 6, columns: 2, detect: true }
+const SETTINGS_KEY = 'settings'
+let settings: Settings = { ...DEFAULTS }
+const cleanSettings = (v: unknown): Settings => {
+  const o = (v && typeof v === 'object' ? v : {}) as Partial<Settings>
+  return {
+    show: Number.isInteger(o.show) ? Math.min(12, Math.max(2, o.show as number)) : DEFAULTS.show,
+    columns: o.columns === 1 ? 1 : 2,
+    detect: typeof o.detect === 'boolean' ? o.detect : DEFAULTS.detect,
+  }
+}
+
+// This session's id and folder, set at session.start.
+let sid = 'local'
+let cwd = ''
+const SESSIONS = 'sessions'
+const KEEP = 50
+
+const matchers = (): [string, RegExp][] =>
+  Object.entries(modes).flatMap(([kind, m]): [string, RegExp][] => {
+    try {
+      return m.match ? [[kind, new RegExp(m.match)]] : []
+    } catch {
+      return []
+    }
+  })
+
+// Saves this session's own steps (not the ones rebuilt from the transcript) and
+// keeps the newest 50 sessions in the store.
+async function persist($: EngineInterface, list: Done[]) {
+  try {
+    await $.store.set(`session:${sid}`, list.filter(d => !d.scanned))
+    const ids = ((await $.store.get(SESSIONS)) ?? []) as string[]
+    if (ids.at(-1) !== sid) {
+      const next = [...ids.filter(i => i !== sid), sid]
+      for (const old of next.slice(0, -KEEP)) await $.store.delete(`session:${old}`)
+      await $.store.set(SESSIONS, next.slice(-KEEP))
+    }
+  } catch {
+    // ponytail: a full or unreadable store only costs the report on resume
+  }
+}
+
+// A command that shipped something: an approved step of the same kind that has
+// not run yet takes it; anything else is a step Claude ran without the panel.
+async function noteRun($: EngineInterface, command: string, id: string) {
+  const found = settings.detect ? detect(command, cwd, matchers()) : []
+  if (found.length === 0) return
+  const at = await $.clock.now()
+  const list = await update($, history, h => {
+    const next = [...h]
+    for (const f of found) {
+      const fid = `${id}:${f.kind}`
+      if (next.some(d => d.id === fid || d.ranId === fid)) continue
+      const i = next.findLastIndex(d => d.answer === 'yes' && d.kind === f.kind && !d.ranId)
+      if (i >= 0) next[i] = { ...next[i]!, ranId: fid }
+      else next.push({ id: fid, kind: f.kind, title: f.title, answer: 'ran', at })
+    }
+    return next.slice(-200)
+  })
+  await persist($, list)
+}
+
+// On start (new, resumed or reloaded session): the saved steps, plus what the
+// transcript shows was run that nothing saved (no time is known for those).
+async function rebuild($: EngineInterface) {
+  const stored = (await $.store.get(`session:${sid}`).catch(() => undefined)) as Done[] | undefined
+  const saved = Array.isArray(stored) ? stored : (await read($, history)).filter(d => !d.scanned)
+  const known = new Set(saved.flatMap(d => [d.id, d.ranId ?? '']))
+  const scanned: Done[] = []
+  const messages = settings.detect ? await $.session.messages().catch(() => []) : []
+  for (const m of Array.isArray(messages) ? messages : []) {
+    for (const u of m.toolUses ?? []) {
+      const command = (u.input as { command?: unknown } | undefined)?.command
+      if (u.tool !== 'Bash' || u.isError || u.text === undefined || typeof command !== 'string') continue
+      for (const f of detect(command, cwd, matchers())) {
+        const fid = `${u.tool_use_id}:${f.kind}`
+        if (known.has(fid)) continue
+        known.add(fid)
+        scanned.push({ id: fid, kind: f.kind, title: f.title, answer: 'ran', at: 0, scanned: true })
+      }
+    }
+  }
+  await update($, history, () => [...scanned, ...saved].slice(-200))
+}
 
 async function load($: EngineInterface) {
   // An unreadable store still leaves the built-ins, so the tools always register.
   const saved = await $.store.get(STORE_KEY).catch(() => undefined)
   modes = merge((saved ?? {}) as Saved)
+  settings = cleanSettings(await $.store.get(SETTINGS_KEY).catch(() => undefined))
 }
 
 // Registering again replaces the tool, so its kind list follows the modes.
@@ -80,6 +168,8 @@ function registerOffer($: EngineInterface) {
 
 export const register: Register = on => {
   on('session.start', async ($, e, next) => {
+    cwd = e.cwd
+    sid = await $.session.id().catch(() => 'local')
     await load($)
     await registerOffer($)
     await $.tool.register({
@@ -100,15 +190,35 @@ export const register: Register = on => {
                 icon: { enum: Object.keys(ICONS) },
                 color: { type: 'string', pattern: '^#[0-9a-fA-F]{6}$' },
                 hint: { type: 'string', maxLength: 80 },
+                match: { type: 'string', maxLength: 200 },
               },
             },
           },
           remove: { type: 'array', items: { type: 'string' } },
+          settings: {
+            type: 'object',
+            properties: {
+              show: { type: 'integer', minimum: 2, maximum: 12 },
+              columns: { enum: [1, 2] },
+              detect: { type: 'boolean' },
+            },
+          },
         },
       },
     })
+    await rebuild($).catch(() => undefined)
 
     return next(e)
+  })
+
+  // Commands Claude runs: a successful one that ships something joins the report.
+  on('tool.call', { tool: 'Bash' }, async ($, e, next) => {
+    const ran = await next(e)
+    if (!ran.deny && !ran.isError) {
+      const at = await $.clock.now()
+      await noteRun($, String(e.command ?? ''), e.tool_use_id ?? `t${at}`).catch(() => undefined)
+    }
+    return ran
   })
 
   on('tool.call', { tool: 'mcp__ship-band__offer_actions' }, async ($, e) => {
@@ -132,7 +242,11 @@ export const register: Register = on => {
   }).catch(() => ({ deny: 'ship-band could not show the rows; ask in prose instead.' }))
 
   on('tool.call', { tool: 'mcp__ship-band__edit_modes' }, async ($, e) => {
-    const { add, remove } = e as unknown as { add?: (Partial<Mode> & { name?: string })[]; remove?: string[] }
+    const { add, remove, settings: change } = e as unknown as {
+      add?: (Partial<Mode> & { name?: string })[]
+      remove?: string[]
+      settings?: Partial<Settings>
+    }
     const saved = ((await $.store.get(STORE_KEY)) ?? {}) as Saved
     const skipped: string[] = []
 
@@ -146,18 +260,22 @@ export const register: Register = on => {
     for (const name of Array.isArray(remove) ? remove : []) delete saved[name]
 
     await $.store.set(STORE_KEY, saved)
+    if (change && typeof change === 'object') await $.store.set(SETTINGS_KEY, cleanSettings({ ...settings, ...change }))
     await load($)
     await registerOffer($)
 
     const now = Object.entries(modes).map(([name, m]) => `${name}: "${m.label}", ${m.icon}, ${m.color}`)
     return {
-      result: `${skipped.length ? `Skipped bad names: ${skipped.join(', ')}. ` : ''}Modes now:\n${now.join('\n')}`,
+      result:
+        `${skipped.length ? `Skipped bad names: ${skipped.join(', ')}. ` : ''}Modes now:\n${now.join('\n')}\n` +
+        `Report: show ${settings.show}, ${settings.columns} column(s), auto-detect ${settings.detect ? 'on' : 'off'}`,
     }
   }).catch(() => ({ deny: 'ship-band could not save the modes.' }))
 
   on('ui.render', { component: 'AbovePrompt' }, async ($, e, next) => {
     const list = await read($, asks)
-    const done = await read($, history)
+    // Auto-detect off: steps Claude ran without the panel stay out of the report.
+    const done = (await read($, history)).filter(d => settings.detect || d.answer !== 'ran')
 
     if (e.props.hasSurvey || (list.length === 0 && done.length === 0)) {
       return next(e)
@@ -182,9 +300,10 @@ export const register: Register = on => {
     const answer = async (a: Ask, value: 'yes' | 'no') => {
       const at = await $.clock.now()
       await update($, asks, l => l.filter(x => x.id !== a.id))
-      await update($, history, h =>
+      const saved = await update($, history, h =>
         [...h, { id: `${at}:${a.id}`, kind: a.kind, title: a.title, answer: value, at }].slice(-200),
       )
+      await persist($, saved)
       if (value === 'yes') {
         await $.prompt.submit({
           text: `Yes, go ahead: ${modeOf(a.kind).label} ${a.title}${a.detail ? ` (${a.detail})` : ''}`,
@@ -194,7 +313,10 @@ export const register: Register = on => {
     }
 
     const approved = done.filter(d => d.answer === 'yes').length
-    const shown = done.slice(-STRIP)
+    const skippedN = done.filter(d => d.answer === 'no').length
+    const ranN = done.length - approved - skippedN
+    const STATUS = { yes: 'approved', no: 'skipped', ran: 'ran' } as const
+    const shown = done.slice(-settings.show)
     const earlier = done.length - shown.length
 
     return (
@@ -237,67 +359,61 @@ export const register: Register = on => {
         })}
 
         {done.length > 0 && (
-          <Box key="strip" flexDirection="row" alignItems="flex-start" gap="md">
-            <Box flexDirection="column" flexShrink={0}>
-              <Text size="footnote" weight="semibold">
-                This session
-              </Text>
-              <Text size="footnote" weight="semibold">
-                <Text color={YES}>{`✓ ${approved}`}</Text>
-                {'  '}
-                <Text color={NO}>{`✕ ${done.length - approved}`}</Text>
-              </Text>
-            </Box>
-            <Box flexDirection="row" flexWrap="wrap" alignItems="flex-start" gap="md">
-              {earlier > 0 && (
-                <Box key="earlier" flexDirection="column" alignItems="center">
-                  {svg ? (
-                    <ui.Svg source={more(earlier)} alt={`${earlier} earlier`} width={36} height={36} />
-                  ) : (
-                    <Text dimColor>{`+${earlier}`}</Text>
-                  )}
-                  <Text size="caption" dimColor>
-                    earlier
-                  </Text>
-                </Box>
-              )}
+          <Box key="strip" flexDirection="column" rowGap="sm">
+            <Text size="footnote" weight="semibold">
+              This session{'  '}
+              <Text color={YES}>{`✓ ${approved}`}</Text>
+              {'  '}
+              <Text color={NO}>{`✕ ${skippedN}`}</Text>
+              {ranN > 0 && <Text dimColor weight="regular">{`  ·  ${ranN} ran`}</Text>}
+              {earlier > 0 && <Text dimColor weight="regular">{`  ·  +${earlier} earlier`}</Text>}
+            </Text>
+            {/* Two columns: badged icon, then action and target on one line, status and time under. */}
+            <Box flexDirection="row" flexWrap="wrap" rowGap="sm">
               {shown.map(d => {
                 const m = modeOf(d.kind)
                 const skipped = d.answer === 'no'
                 return (
-                  <Box key={d.id} flexDirection="column" alignItems="center">
-                    {svg ? (
-                      <ui.Svg
-                        source={badged(m, d.answer)}
-                        alt={`${m.label} ${d.title}: ${skipped ? 'no' : 'yes'}`}
-                        width={36}
-                        height={36}
-                      />
-                    ) : (
-                      <Text>
-                        <Text color={m.color} bold>
-                          ●
+                  <Box key={d.id} width={settings.columns === 2 ? '50%' : '100%'} flexDirection="row" alignItems="center" gap="sm" paddingRight={1}>
+                    <Box flexShrink={0}>
+                      {svg ? (
+                        <ui.Svg
+                          source={badged(m, d.answer)}
+                          alt={`${m.label} ${d.title}: ${STATUS[d.answer]}`}
+                          width={36}
+                          height={36}
+                        />
+                      ) : (
+                        <Text>
+                          <Text color={m.color} bold>
+                            ●
+                          </Text>
+                          <Text color={skipped ? NO : d.answer === 'yes' ? YES : FALLBACK} bold>
+                            {skipped ? '✕' : '✓'}
+                          </Text>
                         </Text>
-                        <Text color={skipped ? NO : YES} bold>
-                          {skipped ? '✕' : '✓'}
+                      )}
+                    </Box>
+                    <Box flexDirection="column" flexShrink={1}>
+                      <Text size="footnote" wrap="truncate-end">
+                        {skipped ? (
+                          <Text dimColor weight="semibold">
+                            {m.label}
+                          </Text>
+                        ) : (
+                          <Text color={m.color} weight="semibold">
+                            {m.label}
+                          </Text>
+                        )}
+                        {'  '}
+                        <Text weight="medium" dimColor={skipped}>
+                          {d.title}
                         </Text>
                       </Text>
-                    )}
-                    {skipped ? (
                       <Text size="caption" dimColor>
-                        {m.label}
+                        {d.at > 0 ? `${STATUS[d.answer]} ${hhmm(d.at)}` : STATUS[d.answer]}
                       </Text>
-                    ) : (
-                      <Text size="caption" weight="semibold" color={m.color}>
-                        {m.label}
-                      </Text>
-                    )}
-                    <Text size="caption" weight="medium" dimColor={skipped}>
-                      {short(d.title)}
-                    </Text>
-                    <Text size="caption" dimColor>
-                      {hhmm(d.at)}
-                    </Text>
+                    </Box>
                   </Box>
                 )
               })}

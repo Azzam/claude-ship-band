@@ -1,7 +1,8 @@
 // Modes: what a row asks to do. Pure data, no engine imports, so the README
 // preview script can import it as is.
 
-export type Mode = { label: string; icon: string; color: string; hint: string }
+// match: an optional regex for a shell command that does this step (./deploy.sh).
+export type Mode = { label: string; icon: string; color: string; hint: string; match?: string }
 
 // Yes/No own green and red, so no mode uses them.
 export const YES = '#22c55e'
@@ -53,11 +54,22 @@ export const NAME = /^[a-z][a-z0-9-]{0,19}$/
 const HEX = /^#[0-9a-fA-F]{6}$/
 
 // A saved mode is user data: every field is checked before it reaches a drawing.
+const validMatch = (r: unknown): r is string => {
+  if (typeof r !== 'string' || !r || r.length > 200) return false
+  try {
+    new RegExp(r)
+    return true
+  } catch {
+    return false
+  }
+}
+
 export const clean = (name: string, m: Partial<Mode>): Mode => ({
   label: typeof m.label === 'string' && m.label.trim() ? m.label.trim().slice(0, 20) : name,
   icon: typeof m.icon === 'string' && m.icon in ICONS ? m.icon : 'zap',
   color: typeof m.color === 'string' && HEX.test(m.color) ? m.color : FALLBACK,
   hint: typeof m.hint === 'string' ? m.hint.slice(0, 80) : '',
+  ...(validMatch(m.match) ? { match: m.match } : {}),
 })
 
 // Built-ins with saved changes and custom modes laid over them.
@@ -70,15 +82,12 @@ export const merge = (saved: Record<string, Partial<Mode>>): Record<string, Mode
 }
 
 // The same tile with the answer drawn on as a badge; a skipped one is faded.
-export const badged = (m: Mode, answer: 'yes' | 'no') => {
-  const c = answer === 'yes' ? YES : NO
-  const mark = answer === 'yes' ? 'M25.6 29.2l2 2 3.8-4' : 'M26.3 26.3l4.4 4.4M30.7 26.3l-4.4 4.4'
-  return `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 36 36" width="36" height="36"><g opacity="${answer === 'yes' ? 1 : 0.5}"><rect width="32" height="32" rx="9" fill="${m.color}" fill-opacity=".14"/><g transform="translate(8 8) scale(.6667)" fill="none" stroke="${m.color}" stroke-width="2.25" stroke-linecap="round" stroke-linejoin="round">${ICONS[m.icon] ?? ICONS.zap}</g></g><circle cx="28.5" cy="28.5" r="6.5" fill="${c}"/><path d="${mark}" fill="none" stroke="#fff" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"/></svg>`
+// yes: green check, no: red cross (tile faded), ran: grey check (Claude ran it without the panel).
+export const badged = (m: Mode, answer: 'yes' | 'no' | 'ran') => {
+  const c = answer === 'yes' ? YES : answer === 'no' ? NO : FALLBACK
+  const mark = answer === 'no' ? 'M26.3 26.3l4.4 4.4M30.7 26.3l-4.4 4.4' : 'M25.6 29.2l2 2 3.8-4'
+  return `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 36 36" width="36" height="36"><g opacity="${answer === 'no' ? 0.5 : 1}"><rect width="32" height="32" rx="9" fill="${m.color}" fill-opacity=".14"/><g transform="translate(8 8) scale(.6667)" fill="none" stroke="${m.color}" stroke-width="2.25" stroke-linecap="round" stroke-linejoin="round">${ICONS[m.icon] ?? ICONS.zap}</g></g><circle cx="28.5" cy="28.5" r="6.5" fill="${c}"/><path d="${mark}" fill="none" stroke="#fff" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"/></svg>`
 }
-
-// Dashed tile counting the answered steps the strip has no room for.
-export const more = (n: number) =>
-  `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 36 36" width="36" height="36"><rect x=".75" y=".75" width="30.5" height="30.5" rx="8.5" fill="none" stroke="${FALLBACK}" stroke-opacity=".55" stroke-dasharray="3 3"/><text x="16" y="20.5" text-anchor="middle" font-family="-apple-system,system-ui,sans-serif" font-size="11" font-weight="600" fill="${FALLBACK}">+${Math.min(n, 999)}</text></svg>`
 
 // Tinted rounded tile, icon stroked in the mode's colour (desktop draws Svg as an image: no currentColor).
 export const tile = (m: Mode) =>

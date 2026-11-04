@@ -25,11 +25,13 @@ const engine = (on: On, sent: string[] = []) => {
   on('session.start', (_, e) => ({ cwd: e.cwd }))
   on('prompt.submit', (_, e) => {
     sent.push(e.text)
+    origins.push((e.origin as { kind?: string } | undefined)?.kind ?? 'none')
     return { text: e.text }
   })
 }
+const origins: string[] = []
 
-test('offered steps show as rows; Yes submits and clears, No clears', async ($, on) => {
+test('Yes and No turn the buttons into a report; the person\'s next message clears it', async ($, on) => {
   const sent: string[] = []
   engine(on, sent)
 
@@ -61,8 +63,24 @@ test('offered steps show as rows; Yes submits and clears, No clears', async ($, 
   await ui.press({ key: 'n-1:device:iPhone · Debug' })
   expect(sent[0]).toBe('Yes, go ahead: commit my-app (3 files on main)')
   expect(sent.length).toBe(1)
-  expect(await ui.find({ type: 'Text', text: /iPhone/ })).toBeUndefined()
+
+  // Answered rows stay, with a report and no buttons; the open row keeps its own.
+  expect((await ui.find({ type: 'Text', text: /sent to Claude/ }))?.text).toBe('✓ Yes · commit sent to Claude')
+  expect((await ui.find({ type: 'Text', text: /skipped/ }))?.text).toBe('✕ No · skipped')
+  expect((await ui.find({ type: 'Text', text: /iPhone/ }))?.text).toContain('install')
+  expect(await ui.find({ key: 'y-0:commit:my-app' })).toBeUndefined()
+  expect(await ui.find({ key: 'n-1:device:iPhone · Debug' })).toBeUndefined()
+  expect(await ui.findAll({ type: 'Button' })).toHaveLength(2)
   await ui.unmount()
+
+  // The mod's own Yes message did not clear them; the person's next message does.
+  await $.prompt.submit({ text: 'thanks', asUser: true })
+  const after = await $.ui.mount({ ...BAND, surface: 'desktop' })
+  expect(origins).toEqual(['plugin', 'none'])
+  expect(await after.find({ type: 'Text', text: /my-app/ })).toBeUndefined()
+  expect(await after.find({ type: 'Text', text: /iPhone/ })).toBeUndefined()
+  expect((await after.find({ type: 'Text', text: /web tests/ }))?.text).toContain('verify')
+  await after.unmount()
 })
 
 test('the person adds a mode and relabels a built-in; bad values fall back', async ($, on) => {

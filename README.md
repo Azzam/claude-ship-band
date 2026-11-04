@@ -17,7 +17,8 @@ When Claude finishes work that leaves a step for you to approve, it puts each st
 <sub>Previews drawn from the mod's own icons and colours; buttons and the prompt box follow your Claude app's own style.</sub>
 
 - **✓ Yes** sends "Yes, go ahead: commit my-app (3 files on main)" as your next message, and Claude runs that step.
-- **✕ No** removes the row. Nothing runs.
+- **✕ No** runs nothing.
+- Once you answer, the buttons turn into a report on that row: **✓ Yes · commit sent to Claude** or **✕ No · skipped**. The report stays while Claude works and clears when you send your next message (or Claude offers new steps).
 - Nothing runs before you press Yes.
 
 In the desktop app each row has a drawn icon on a tinted tile. A terminal draws a coloured dot in its place. Yes is always green and No always red, so no mode uses those two colours.
@@ -79,7 +80,7 @@ Requires a Claude Code build with mod (function hook) support; this one was buil
 | `offer_actions` tool | `mcp__ship-band__offer_actions`. Claude calls it with up to 6 rows: `kind` (a mode), a `title` naming only the target, a short `detail`. Each call replaces the rows; an empty list clears them. |
 | `edit_modes` tool | `mcp__ship-band__edit_modes`. Claude calls it only when you ask to add, change or remove a mode. Modes are kept in the mod's own store. |
 | Band | A `ui.render` hook on `AbovePrompt` in [`hooks/register.tsx`](hooks/register.tsx) draws the rows, and gives way to surveys and to an empty list. |
-| Yes / No | Yes submits the step as your message; No removes it. Rows live in session state, so they survive a reload of the mod. |
+| Yes / No | Yes submits the step as your message; both turn the row into a report with no buttons. A `prompt.submit` hook clears answered rows on your next own message, not on the mod's own Yes message. Rows live in session state, so they survive a reload of the mod. |
 
 The mod reads no files, runs no commands and makes no network calls. Claude does the work itself, only after your Yes.
 

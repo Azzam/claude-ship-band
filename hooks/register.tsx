@@ -9,6 +9,9 @@ const asks = atom({ plugin: 'ship-band', key: 'asks' } as const, [], {
   shape: 'asks-1',
 })
 
+// Where a prompt counts as the person's own message.
+const PERSON = new Set(['composer', 'bridge', 'sdk'])
+
 // Modes the person added or changed, kept across sessions.
 const STORE_KEY = 'modes'
 type Saved = Record<string, Partial<Mode>>
@@ -142,6 +145,17 @@ export const register: Register = on => {
     }
   }).catch(() => ({ deny: 'ship-band could not save the modes.' }))
 
+  // The person's next own message clears the answered rows; the mod's own Yes
+  // message (origin `plugin`) leaves them, so the report stays while Claude works.
+  on('prompt.submit', async ($, e, next) => {
+    // No origin stamped: the person's own, as the engine reads it.
+    const kind = (e.origin as { kind?: string } | undefined)?.kind
+    if (kind === undefined || PERSON.has(kind)) {
+      await update($, asks, l => l.filter(a => !a.answer)).catch(() => undefined)
+    }
+    return next(e)
+  })
+
   on('ui.render', { component: 'AbovePrompt' }, async ($, e, next) => {
     const list = await read($, asks)
 
@@ -162,9 +176,11 @@ export const register: Register = on => {
           ●
         </Text>
       )
-    const drop = (id: string) => update($, asks, l => l.filter(a => a.id !== id))
+    // An answered row keeps its place and swaps its buttons for a report.
+    const answer = (id: string, value: 'yes' | 'no') =>
+      update($, asks, l => l.map(x => (x.id === id ? { ...x, answer: value } : x)))
     const yes = (a: Ask) => {
-      void drop(a.id)
+      void answer(a.id, 'yes')
       void $.prompt.submit({
         text: `Yes, go ahead: ${modeOf(a).label} ${a.title}${a.detail ? ` (${a.detail})` : ''}`,
         asUser: true,
@@ -179,7 +195,7 @@ export const register: Register = on => {
             <Box key={a.id} flexDirection="row" alignItems="center" gap="sm">
               <Box flexShrink={0}>{icon(m)}</Box>
               <Box flexDirection="column" flexGrow={1} flexShrink={1}>
-                <Text wrap="truncate-end">
+                <Text wrap="truncate-end" dimColor={a.answer === 'no'}>
                   <Text color={m.color} size="footnote" weight="semibold">
                     {m.label}
                   </Text>
@@ -192,20 +208,36 @@ export const register: Register = on => {
                   </Text>
                 )}
               </Box>
-              <Box flexDirection="row" alignItems="center" gap="xs" flexShrink={0}>
-                <Button key={`n-${a.id}`} label="No" role="dismiss" onPress={() => void drop(a.id)}>
-                  <Text color={NO} bold>
-                    ✕
-                  </Text>{' '}
-                  No
-                </Button>
-                <Button key={`y-${a.id}`} label="Yes" onPress={() => yes(a)}>
+              {a.answer === 'yes' ? (
+                <Text wrap="truncate-end">
                   <Text color={YES} bold>
-                    ✓
-                  </Text>{' '}
-                  Yes
-                </Button>
-              </Box>
+                    ✓ Yes
+                  </Text>
+                  <Text dimColor>{` · ${m.label} sent to Claude`}</Text>
+                </Text>
+              ) : a.answer === 'no' ? (
+                <Text wrap="truncate-end">
+                  <Text color={NO} bold>
+                    ✕ No
+                  </Text>
+                  <Text dimColor> · skipped</Text>
+                </Text>
+              ) : (
+                <Box flexDirection="row" alignItems="center" gap="xs" flexShrink={0}>
+                  <Button key={`n-${a.id}`} label="No" role="dismiss" onPress={() => void answer(a.id, 'no')}>
+                    <Text color={NO} bold>
+                      ✕
+                    </Text>{' '}
+                    No
+                  </Button>
+                  <Button key={`y-${a.id}`} label="Yes" onPress={() => yes(a)}>
+                    <Text color={YES} bold>
+                      ✓
+                    </Text>{' '}
+                    Yes
+                  </Button>
+                </Box>
+              )}
             </Box>
           )
         })}

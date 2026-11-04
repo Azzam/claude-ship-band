@@ -1,0 +1,11 @@
+{
+  "name": "ship-band",
+  "version": "0.1.0",
+  "description": "A band above the prompt where Claude asks before it commits, deploys or installs on a device: answer with Yes or No.",
+  "author": { "name": "Mohamed Azzam", "url": "https://github.com/Azzam" },
+  "homepage": "https://github.com/Azzam/claude-ship-band",
+  "repository": "https://github.com/Azzam/claude-ship-band",
+  "license": "MIT",
+  "keywords": ["claude-code", "mod", "approval", "commit", "deploy", "ios", "android"],
+  "types": "./types/index.d.ts"
+}

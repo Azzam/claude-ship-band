@@ -1,0 +1,12 @@
+{
+  "name": "claude-ship-band",
+  "owner": { "name": "Mohamed Azzam", "url": "https://github.com/Azzam" },
+  "description": "ship-band, a Claude Code mod: approve commits, deploys and device installs with Yes or No above the prompt.",
+  "plugins": [
+    {
+      "name": "ship-band",
+      "source": "./",
+      "description": "A band above the prompt where Claude asks before it commits, deploys or installs on a device: answer with Yes or No."
+    }
+  ]
+}

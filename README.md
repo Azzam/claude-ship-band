@@ -6,6 +6,12 @@
 
 When Claude finishes work that needs a commit, a push, a pull request, a deploy, a release or an install on a phone, it proposes each step as a row above the prompt instead of asking in a paragraph. You answer with **✓ Yes** or **✕ No**, and every answer goes into a report of the session.
 
+**In the Claude desktop app**: a real screen recording of ship-band 0.5, pressing No on a deploy, then Yes on a commit.
+
+![Screen recording of ship-band in the Claude desktop app: three proposed steps above the prompt; No on the deploy moves it into the session report as skipped, then Yes on the commit moves it in as approved and the counts update](docs/demo.gif)
+
+**Previews**, light and dark:
+
 **Light**
 
 ![ship-band in light mode: an open verify step with No and Yes buttons, and below it the two-column session report, each step with an icon, a yes, no or ran badge, its action, target, status and time](docs/band-light.png)
@@ -22,6 +28,7 @@ ship-band is an **approval interface**, not a guard:
 
 - **✓ Yes** sends "Yes, go ahead: commit my-app (3 files on main)" to Claude as your message, and Claude carries out the step.
 - **✕ No** sends nothing. The step is recorded as skipped.
+- In the desktop app, Yes and No are the app's own buttons, so their ✓ and ✕ take the button's text colour.
 - The tool's description asks Claude to wait for your Yes before running a step it proposed. The mod does not intercept or block commands: Claude can still run a command it never proposed, as it could without the mod. To enforce approval, use Claude Code's permission settings (allow and ask rules). Steps Claude runs without the panel still show up in the report, marked **ran**.
 
 ## The session report

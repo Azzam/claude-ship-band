@@ -341,13 +341,13 @@ export const register: Register = on => {
                 )}
               </Box>
               <Box flexDirection="row" alignItems="center" gap="xs" flexShrink={0}>
-                <Button key={`n-${a.id}`} label="No" role="dismiss" onPress={() => void answer(a, 'no')}>
+                <Button key={`n-${a.id}`} role="dismiss" onPress={() => void answer(a, 'no')}>
                   <Text color={NO} bold>
                     ✕
                   </Text>{' '}
                   No
                 </Button>
-                <Button key={`y-${a.id}`} label="Yes" onPress={() => void answer(a, 'yes')}>
+                <Button key={`y-${a.id}`} onPress={() => void answer(a, 'yes')}>
                   <Text color={YES} bold>
                     ✓
                   </Text>{' '}

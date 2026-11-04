@@ -1,6 +1,5 @@
-export type AskKind = 'commit' | 'deploy' | 'device'
-
-export type Ask = { id: string; kind: AskKind; title: string; detail: string }
+// kind: a mode's name, built-in or one the person added (hooks/modes.ts).
+export type Ask = { id: string; kind: string; title: string; detail: string }
 
 declare module 'claude-code' {
   interface PluginState {

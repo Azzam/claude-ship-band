@@ -1,6 +1,6 @@
 MIT License
 
-Copyright (c) 2026 Mohamed Azzam
+Copyright (c) 2026 Azzam
 
 Permission is hereby granted, free of charge, to any person obtaining a copy
 of this software and associated documentation files (the "Software"), to deal
@@ -22,8 +22,8 @@ SOFTWARE.
 
 ---
 
-Third-party: the commit, rocket and smartphone icon paths in
-hooks/register.tsx come from Lucide (https://lucide.dev), under the ISC License:
+Third-party: the icon paths in hooks/modes.ts come from Lucide
+(https://lucide.dev), which includes Feather icons (MIT), under the ISC License:
 
 ISC License
 

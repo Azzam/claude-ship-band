@@ -2,19 +2,19 @@
 
 <h1 align="center">ship-band</h1>
 
-<p align="center">A Claude Code mod: Claude asks before it commits, deploys or installs on a device,<br>and you answer from a band above the prompt with <b>✓ Yes</b> or <b>✕ No</b>.</p>
+<p align="center">A Claude Code mod: Claude asks before it commits, tests, deploys, releases or installs on a device,<br>and you answer from a band above the prompt with <b>✓ Yes</b> or <b>✕ No</b>.</p>
 
 ---
 
 When Claude finishes work that leaves a step for you to approve, it puts each step in a row above the prompt instead of asking in a paragraph:
 
 <p align="center">
-  <img src="docs/band-light.png" width="720" alt="ship-band in light mode: commit, deploy and install rows, each with No and Yes buttons, above the prompt box">
+  <img src="docs/band-light.png" width="720" alt="ship-band in light mode: verify, commit, open PR, deploy and install rows, each with No and Yes buttons, above the prompt box">
   <br><sub>Light</sub>
 </p>
 
 <p align="center">
-  <img src="docs/band-dark.png" width="720" alt="ship-band in dark mode: commit, deploy and install rows, each with No and Yes buttons, above the prompt box">
+  <img src="docs/band-dark.png" width="720" alt="ship-band in dark mode: verify, commit, open PR, deploy and install rows, each with No and Yes buttons, above the prompt box">
   <br><sub>Dark</sub>
 </p>
 
@@ -24,7 +24,36 @@ When Claude finishes work that leaves a step for you to approve, it puts each st
 - **✕ No** removes the row. Nothing runs.
 - Nothing runs before you press Yes.
 
-In the desktop app each row has a drawn icon on a tinted tile: violet for commit, amber for deploy, blue for install. A terminal draws a coloured mark in its place. Yes is always green and No always red.
+In the desktop app each row has a drawn icon on a tinted tile. A terminal draws a coloured dot in its place. Yes is always green and No always red, so no mode uses those two colours.
+
+## Modes
+
+| | Mode | Shown as | For |
+| --- | --- | --- | --- |
+| <img src="docs/modes/commit.svg" width="24"> | `commit` | commit | git commit |
+| <img src="docs/modes/push.svg" width="24"> | `push` | push | git push to a remote |
+| <img src="docs/modes/pr.svg" width="24"> | `pr` | open PR | open a pull request |
+| <img src="docs/modes/merge.svg" width="24"> | `merge` | merge | merge a branch or PR |
+| <img src="docs/modes/verify.svg" width="24"> | `verify` | verify | run tests, lint, type checks or QA |
+| <img src="docs/modes/deploy.svg" width="24"> | `deploy` | deploy | deploy to an environment |
+| <img src="docs/modes/release.svg" width="24"> | `release` | release | tag a version, write release notes |
+| <img src="docs/modes/publish.svg" width="24"> | `publish` | publish | publish to a store or registry |
+| <img src="docs/modes/device.svg" width="24"> | `device` | install | build and install on a phone or simulator |
+| <img src="docs/modes/migrate.svg" width="24"> | `migrate` | migrate | run a database migration |
+| <img src="docs/modes/run.svg" width="24"> | `run` | run | run a script, job or command |
+
+### Add or change modes
+
+Ask Claude in plain words. It saves the change for you, and it stays across sessions:
+
+- "Add a ship-band mode called translate, globe icon, pink, for updating locale files."
+- "Rename the commit mode to save."
+- "Make deploy red-orange: #ea580c."
+- "Remove the translate mode." Removing a built-in you changed puts it back to its default.
+
+Each mode has a **name** (lowercase letters, digits, `-`), a **label** (the word shown), an **icon**, a **colour** (`#rrggbb`) and a **hint** that tells Claude when to use it. A bad icon or colour falls back to a lightning bolt in slate grey.
+
+Icons: `commit`, `upload`, `pull-request`, `merge`, `shield-check`, `rocket`, `tag`, `package`, `smartphone`, `database`, `play`, `zap`, `globe`, `terminal`, `send`, `trash`, `refresh`.
 
 ## Install
 
@@ -48,16 +77,15 @@ Requires a Claude Code build with mod (function hook) support; this one was buil
 
 ## How it works
 
-The mod is one hooks module, [`hooks/register.tsx`](hooks/register.tsx):
-
 | Part | What it does |
 | --- | --- |
-| `offer_actions` tool | Registered for the model as `mcp__ship-band__offer_actions`. Its description tells Claude when to use it. Each call replaces the rows; an empty list clears them. |
-| Row | `kind` (`commit`, `deploy` or `device`, shown as commit, deploy, install), a `title` naming only the target, and a short `detail`. Up to 6 rows. |
-| Band | A `ui.render` hook on `AbovePrompt` draws the rows, and gives way to surveys and to an empty list. |
+| [`hooks/modes.ts`](hooks/modes.ts) | The built-in modes, the icon set, and the checks every saved mode passes before it is drawn. |
+| `offer_actions` tool | `mcp__ship-band__offer_actions`. Claude calls it with up to 6 rows: `kind` (a mode), a `title` naming only the target, a short `detail`. Each call replaces the rows; an empty list clears them. |
+| `edit_modes` tool | `mcp__ship-band__edit_modes`. Claude calls it only when you ask to add, change or remove a mode. Modes are kept in the mod's own store. |
+| Band | A `ui.render` hook on `AbovePrompt` in [`hooks/register.tsx`](hooks/register.tsx) draws the rows, and gives way to surveys and to an empty list. |
 | Yes / No | Yes submits the step as your message; No removes it. Rows live in session state, so they survive a reload of the mod. |
 
-The mod reads no files and runs no commands, and makes no network calls. Claude does the work itself, only after your Yes.
+The mod reads no files, runs no commands and makes no network calls. Claude does the work itself, only after your Yes.
 
 ## Develop
 
@@ -69,8 +97,8 @@ claude plugin test ./               # tests/band.test.tsx
 
 ## Credits
 
-Icons from [Lucide](https://lucide.dev) (ISC). ship-band is a community mod, not an Anthropic product.
+Icons from [Lucide](https://lucide.dev) (ISC) and [Feather](https://feathericons.com) (MIT). ship-band is a community mod, not an Anthropic product.
 
 ## License
 
-[MIT](LICENSE) © 2026 Mohamed Azzam
+[MIT](LICENSE) © 2026 Azzam

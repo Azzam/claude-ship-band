@@ -3,7 +3,7 @@ import type { EngineInterface, Register } from 'claude-code'
 
 import type { Ask, Done } from '../types'
 import { detect } from './detect'
-import { badged, BUILT_IN, FALLBACK, ICONS, merge, NAME, NO, tile, YES } from './modes'
+import { badged, BUILT_IN, FALLBACK, ICONS, mark, merge, NAME, NO, tile, YES } from './modes'
 import type { Mode } from './modes'
 
 // Open steps. asks-2: answered rows no longer stay here (0.3.0 kept them with an `answer`).
@@ -340,20 +340,35 @@ export const register: Register = on => {
                   </Text>
                 )}
               </Box>
-              <Box flexDirection="row" alignItems="center" gap="xs" flexShrink={0}>
-                <Button key={`n-${a.id}`} role="dismiss" onPress={() => void answer(a, 'no')}>
-                  <Text color={NO} bold>
-                    ✕
-                  </Text>{' '}
-                  No
-                </Button>
-                <Button key={`y-${a.id}`} onPress={() => void answer(a, 'yes')}>
-                  <Text color={YES} bold>
-                    ✓
-                  </Text>{' '}
-                  Yes
-                </Button>
-              </Box>
+              {svg ? (
+                // Desktop: the app's own buttons, each with a coloured mark beside it.
+                <Box flexDirection="row" alignItems="center" gap="sm" flexShrink={0}>
+                  <Box flexDirection="row" alignItems="center" gap="xs">
+                    <ui.Svg source={mark('no')} alt="red cross" width={16} height={16} />
+                    <Button key={`n-${a.id}`} label="No" role="dismiss" onPress={() => void answer(a, 'no')} />
+                  </Box>
+                  <Box flexDirection="row" alignItems="center" gap="xs">
+                    <ui.Svg source={mark('yes')} alt="green check" width={16} height={16} />
+                    <Button key={`y-${a.id}`} label="Yes" onPress={() => void answer(a, 'yes')} />
+                  </Box>
+                </Box>
+              ) : (
+                // Terminal: the marks inside the buttons, in colour.
+                <Box flexDirection="row" alignItems="center" gap="xs" flexShrink={0}>
+                  <Button key={`n-${a.id}`} role="dismiss" onPress={() => void answer(a, 'no')}>
+                    <Text color={NO} bold>
+                      ✕
+                    </Text>{' '}
+                    No
+                  </Button>
+                  <Button key={`y-${a.id}`} onPress={() => void answer(a, 'yes')}>
+                    <Text color={YES} bold>
+                      ✓
+                    </Text>{' '}
+                    Yes
+                  </Button>
+                </Box>
+              )}
             </Box>
           )
         })}

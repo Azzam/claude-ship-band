@@ -1,6 +1,6 @@
 {
   "name": "ship-band",
-  "version": "0.5.1",
+  "version": "0.5.2",
   "description": "A Claude Code mod that turns proposed actions into Yes/No buttons above the prompt.",
   "author": {
     "name": "Azzam",

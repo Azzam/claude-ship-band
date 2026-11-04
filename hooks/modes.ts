@@ -82,6 +82,11 @@ export const merge = (saved: Record<string, Partial<Mode>>): Record<string, Mode
 }
 
 // The same tile with the answer drawn on as a badge; a skipped one is faded.
+// The coloured mark beside a desktop Yes or No button: the desktop draws its own
+// buttons and ignores colour inside them. Same circles as the report's badges.
+export const mark = (answer: 'yes' | 'no') =>
+  `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 16 16" width="16" height="16"><circle cx="8" cy="8" r="8" fill="${answer === 'yes' ? YES : NO}"/><path d="${answer === 'yes' ? 'M4.6 8.3l2.2 2.2 4.6-4.8' : 'M5.4 5.4l5.2 5.2M10.6 5.4l-5.2 5.2'}" fill="none" stroke="#fff" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"/></svg>`
+
 // yes: green check, no: red cross (tile faded), ran: grey check (Claude ran it without the panel).
 export const badged = (m: Mode, answer: 'yes' | 'no' | 'ran') => {
   const c = answer === 'yes' ? YES : answer === 'no' ? NO : FALLBACK

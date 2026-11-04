@@ -28,7 +28,7 @@ ship-band is an **approval interface**, not a guard:
 
 - **✓ Yes** sends "Yes, go ahead: commit my-app (3 files on main)" to Claude as your message, and Claude carries out the step.
 - **✕ No** sends nothing. The step is recorded as skipped.
-- In the desktop app, Yes and No are the app's own buttons, so their ✓ and ✕ take the button's text colour.
+- In the desktop app, Yes and No are the app's own buttons, which ignore colour inside them, so a red ✕ and a green ✓ mark sit beside them. A terminal draws ✕ and ✓ inside the buttons instead.
 - The tool's description asks Claude to wait for your Yes before running a step it proposed. The mod does not intercept or block commands: Claude can still run a command it never proposed, as it could without the mod. To enforce approval, use Claude Code's permission settings (allow and ask rules). Steps Claude runs without the panel still show up in the report, marked **ran**.
 
 ## The session report

@@ -63,8 +63,8 @@ test('answering moves a step into the session strip; open rows keep their button
   // Action and target sit on one line beside the icon.
   expect((await ui.find({ type: 'Text', text: /my-app/ }))?.text).toBe('commit  my-app')
   expect((await ui.find({ type: 'Text', text: /iPhone/ }))?.text).toBe('install  iPhone · Debug')
-  // One tile for the open row, one badged tile per answered step.
-  expect(await ui.findAll({ type: 'Svg' })).toHaveLength(3)
+  // The open row: its tile and the two marks beside Yes and No; then one badged tile per answered step.
+  expect(await ui.findAll({ type: 'Svg' })).toHaveLength(5)
   await ui.unmount()
 
   // A new offer replaces the open rows only; the strip stays.

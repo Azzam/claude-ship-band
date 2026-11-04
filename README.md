@@ -8,14 +8,17 @@
 
 When Claude finishes work that leaves a step for you to approve, it puts each step in a row above the prompt instead of asking in a paragraph:
 
-```
-[●]  commit   my-app                              ✕ No   ✓ Yes
-              3 files on main
-[▲]  deploy   backend → staging                   ✕ No   ✓ Yes
-              gateway image
-[▮]  install  iPhone · Debug                      ✕ No   ✓ Yes
-              ios app, debug build
-```
+<p align="center">
+  <img src="docs/band-light.png" width="720" alt="ship-band in light mode: commit, deploy and install rows, each with No and Yes buttons, above the prompt box">
+  <br><sub>Light</sub>
+</p>
+
+<p align="center">
+  <img src="docs/band-dark.png" width="720" alt="ship-band in dark mode: commit, deploy and install rows, each with No and Yes buttons, above the prompt box">
+  <br><sub>Dark</sub>
+</p>
+
+<p align="center"><sub>Previews drawn from the mod's own icons and colours; buttons and the prompt box follow your Claude app's own style.</sub></p>
 
 - **✓ Yes** sends "Yes, go ahead: commit my-app (3 files on main)" as your next message, and Claude runs that step.
 - **✕ No** removes the row. Nothing runs.

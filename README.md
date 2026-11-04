@@ -1,5 +1,3 @@
-<p align="center"><img src=".claude-plugin/icon.png" width="96" alt="ship-band icon"></p>
-
 <h1 align="center">ship-band</h1>
 
 <p align="center">A Claude Code mod: Claude asks before it commits, tests, deploys, releases or installs on a device,<br>and you answer from a band above the prompt with <b>✓ Yes</b> or <b>✕ No</b>.</p>
@@ -8,17 +6,15 @@
 
 When Claude finishes work that leaves a step for you to approve, it puts each step in a row above the prompt instead of asking in a paragraph:
 
-<p align="center">
-  <img src="docs/band-light.png" width="720" alt="ship-band in light mode: verify, commit, open PR, deploy and install rows, each with No and Yes buttons, above the prompt box">
-  <br><sub>Light</sub>
-</p>
+**Light**
 
-<p align="center">
-  <img src="docs/band-dark.png" width="720" alt="ship-band in dark mode: verify, commit, open PR, deploy and install rows, each with No and Yes buttons, above the prompt box">
-  <br><sub>Dark</sub>
-</p>
+![ship-band in light mode: verify, commit, open PR, deploy and install rows, each with No and Yes buttons, above the prompt box](docs/band-light.png)
 
-<p align="center"><sub>Previews drawn from the mod's own icons and colours; buttons and the prompt box follow your Claude app's own style.</sub></p>
+**Dark**
+
+![ship-band in dark mode: verify, commit, open PR, deploy and install rows, each with No and Yes buttons, above the prompt box](docs/band-dark.png)
+
+<sub>Previews drawn from the mod's own icons and colours; buttons and the prompt box follow your Claude app's own style.</sub>
 
 - **✓ Yes** sends "Yes, go ahead: commit my-app (3 files on main)" as your next message, and Claude runs that step.
 - **✕ No** removes the row. Nothing runs.
@@ -30,17 +26,17 @@ In the desktop app each row has a drawn icon on a tinted tile. A terminal draws 
 
 | | Mode | Shown as | For |
 | --- | --- | --- | --- |
-| <img src="docs/modes/commit.svg" width="24"> | `commit` | commit | git commit |
-| <img src="docs/modes/push.svg" width="24"> | `push` | push | git push to a remote |
-| <img src="docs/modes/pr.svg" width="24"> | `pr` | open PR | open a pull request |
-| <img src="docs/modes/merge.svg" width="24"> | `merge` | merge | merge a branch or PR |
-| <img src="docs/modes/verify.svg" width="24"> | `verify` | verify | run tests, lint, type checks or QA |
-| <img src="docs/modes/deploy.svg" width="24"> | `deploy` | deploy | deploy to an environment |
-| <img src="docs/modes/release.svg" width="24"> | `release` | release | tag a version, write release notes |
-| <img src="docs/modes/publish.svg" width="24"> | `publish` | publish | publish to a store or registry |
-| <img src="docs/modes/device.svg" width="24"> | `device` | install | build and install on a phone or simulator |
-| <img src="docs/modes/migrate.svg" width="24"> | `migrate` | migrate | run a database migration |
-| <img src="docs/modes/run.svg" width="24"> | `run` | run | run a script, job or command |
+| ![commit](docs/modes/commit.svg) | `commit` | commit | git commit |
+| ![push](docs/modes/push.svg) | `push` | push | git push to a remote |
+| ![pr](docs/modes/pr.svg) | `pr` | open PR | open a pull request |
+| ![merge](docs/modes/merge.svg) | `merge` | merge | merge a branch or PR |
+| ![verify](docs/modes/verify.svg) | `verify` | verify | run tests, lint, type checks or QA |
+| ![deploy](docs/modes/deploy.svg) | `deploy` | deploy | deploy to an environment |
+| ![release](docs/modes/release.svg) | `release` | release | tag a version, write release notes |
+| ![publish](docs/modes/publish.svg) | `publish` | publish | publish to a store or registry |
+| ![device](docs/modes/device.svg) | `device` | install | build and install on a phone or simulator |
+| ![migrate](docs/modes/migrate.svg) | `migrate` | migrate | run a database migration |
+| ![run](docs/modes/run.svg) | `run` | run | run a script, job or command |
 
 ### Add or change modes
 

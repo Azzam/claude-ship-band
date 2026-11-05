@@ -317,3 +317,31 @@ test('one row per action: its targets, a count, the latest status, every branch 
   expect(await ui.findAll({ type: 'Svg' })).toHaveLength(3)
   await ui.unmount()
 })
+
+test('a row shows at most two targets that fit; the rest count as more', async ($, on) => {
+  engine(on)
+  mock.clock(on)
+  await $.session.start({ cwd: '/', surface: 'desktop', isInteractive: true })
+  const steps = [
+    { kind: 'deploy', title: 'backend → staging' },
+    { kind: 'deploy', title: 'demo → staging' },
+    { kind: 'deploy', title: 'web → production' },
+    { kind: 'push', title: 'claude-ship-band' },
+    { kind: 'push', title: 'claude-ship-band → main' },
+  ]
+  await $.tool.call({ tool: 'mcp__ship-band__offer_actions', actions: steps })
+  const ui = await $.ui.mount({ ...BAND, surface: 'desktop' })
+  for (const [i, a] of steps.entries()) await ui.press({ key: `n-${i}:${a.kind}:${a.title}` })
+
+  // Two short targets fit; a third counts as more.
+  expect((await ui.find({ type: 'Text', text: /^deploy {2}/ }))?.text).toBe('deploy  web → production, demo → staging +1 more ×3')
+  // Two long ones do not fit a column together.
+  expect((await ui.find({ type: 'Text', text: /^push {2}/ }))?.text).toBe('push  claude-ship-band → main +1 more ×2')
+  await ui.unmount()
+
+  // One column has room for both.
+  await $.tool.call({ tool: 'mcp__ship-band__edit_modes', settings: { columns: 1 } })
+  const wide = await $.ui.mount({ ...BAND, surface: 'desktop' })
+  expect((await wide.find({ type: 'Text', text: /^push {2}/ }))?.text).toBe('push  claude-ship-band → main, claude-ship-band ×2')
+  await wide.unmount()
+})

@@ -335,6 +335,17 @@ export const register: Register = on => {
       for (const r of d.ref?.split(', ') ?? []) row.refs = newest(row.refs, r)
       rows.set(key, row)
     }
+    // At most two targets per row, and only what fits its column; the rest count as "+N more".
+    // ponytail: a character budget stands in for measuring text, which a hook cannot do.
+    const budget = settings.columns === 2 ? 32 : 64
+    const fit = (titles: string[]) => {
+      const out: string[] = []
+      for (const t of titles) {
+        if (out.length === 2 || (out.length > 0 && [...out, t].join(', ').length > budget)) break
+        out.push(t)
+      }
+      return { text: out.join(', '), more: titles.length - out.length }
+    }
     const shown = [...rows.values()].slice(-settings.show)
     const earlier = rows.size - shown.length
 
@@ -413,6 +424,7 @@ export const register: Register = on => {
             <Box flexDirection="row" flexWrap="wrap" rowGap="sm">
               {shown.map(({ last: d, n, titles, refs }) => {
                 const m = modeOf(d.kind)
+                const target = fit(titles)
                 const skipped = d.answer === 'no'
                 return (
                   <Box key={d.id} width={settings.columns === 2 ? '50%' : '100%'} flexDirection="row" alignItems="center" gap="sm" paddingRight={1}>
@@ -448,9 +460,11 @@ export const register: Register = on => {
                         )}
                         {'  '}
                         <Text weight="medium" dimColor={skipped}>
-                          {titles.join(', ')}
+                          {target.text}
                         </Text>
-                        {n > 1 ? <Text dimColor>{` ×${n}`}</Text> : null}
+                        {target.more > 0 || n > 1 ? (
+                          <Text dimColor>{`${target.more > 0 ? ` +${target.more} more` : ''}${n > 1 ? ` ×${n}` : ''}`}</Text>
+                        ) : null}
                       </Text>
                       {/* Status, time, then the branch or tag it landed on. Single spaces: the
                           desktop draws a string with a run of spaces in a monospace face. */}

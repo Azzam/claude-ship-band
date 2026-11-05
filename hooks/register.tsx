@@ -90,8 +90,8 @@ async function persist($: EngineInterface, list: Done[]) {
 
 // A command that shipped something: an approved step of the same kind that has
 // not run yet takes it; anything else is a step Claude ran without the panel.
-async function noteRun($: EngineInterface, command: string, id: string) {
-  const found = settings.detect ? detect(command, cwd, matchers()) : []
+async function noteRun($: EngineInterface, command: string, id: string, out: string) {
+  const found = settings.detect ? detect(command, cwd, matchers(), out) : []
   if (found.length === 0) return
   const at = await $.clock.now()
   const list = await update($, history, h => {
@@ -100,8 +100,9 @@ async function noteRun($: EngineInterface, command: string, id: string) {
       const fid = `${id}:${f.kind}`
       if (next.some(d => d.id === fid || d.ranId === fid)) continue
       const i = next.findLastIndex(d => d.answer === 'yes' && d.kind === f.kind && !d.ranId)
-      if (i >= 0) next[i] = { ...next[i]!, ranId: fid }
-      else next.push({ id: fid, kind: f.kind, title: f.title, answer: 'ran', at })
+      const ref = f.ref ? { ref: f.ref } : {}
+      if (i >= 0) next[i] = { ...next[i]!, ranId: fid, ...ref }
+      else next.push({ id: fid, kind: f.kind, title: f.title, answer: 'ran', at, ...ref })
     }
     return next.slice(-200)
   })
@@ -120,11 +121,11 @@ async function rebuild($: EngineInterface) {
     for (const u of m.toolUses ?? []) {
       const command = (u.input as { command?: unknown } | undefined)?.command
       if (u.tool !== 'Bash' || u.isError || u.text === undefined || typeof command !== 'string') continue
-      for (const f of detect(command, cwd, matchers())) {
+      for (const f of detect(command, cwd, matchers(), u.text)) {
         const fid = `${u.tool_use_id}:${f.kind}`
         if (known.has(fid)) continue
         known.add(fid)
-        scanned.push({ id: fid, kind: f.kind, title: f.title, answer: 'ran', at: 0, scanned: true })
+        scanned.push({ id: fid, kind: f.kind, title: f.title, answer: 'ran', at: 0, scanned: true, ...(f.ref ? { ref: f.ref } : {}) })
       }
     }
   }
@@ -216,7 +217,7 @@ export const register: Register = on => {
     const ran = await next(e)
     if (!ran.deny && !ran.isError) {
       const at = await $.clock.now()
-      await noteRun($, String(e.command ?? ''), e.tool_use_id ?? `t${at}`).catch(() => undefined)
+      await noteRun($, String(e.command ?? ''), e.tool_use_id ?? `t${at}`, ran.text ?? '').catch(() => undefined)
     }
     return ran
   })
@@ -277,7 +278,7 @@ export const register: Register = on => {
     // Auto-detect off: steps Claude ran without the panel stay out of the report.
     const done = (await read($, history)).filter(d => settings.detect || d.answer !== 'ran')
 
-    if (e.props.hasSurvey || (list.length === 0 && done.length === 0)) {
+    if (e.props.hasSurvey) {
       return next(e)
     }
 
@@ -373,6 +374,13 @@ export const register: Register = on => {
           )
         })}
 
+        {/* Nothing yet: one quiet line, so the band shows it is loaded. */}
+        {list.length === 0 && done.length === 0 && (
+          <Text key="empty" size="footnote" weight="semibold">
+            This session<Text dimColor weight="regular">{'  ·  no steps yet'}</Text>
+          </Text>
+        )}
+
         {done.length > 0 && (
           <Box key="strip" flexDirection="column" rowGap="sm">
             <Text size="footnote" weight="semibold">
@@ -425,8 +433,9 @@ export const register: Register = on => {
                           {d.title}
                         </Text>
                       </Text>
-                      <Text size="caption" dimColor>
-                        {d.at > 0 ? `${STATUS[d.answer]} ${hhmm(d.at)}` : STATUS[d.answer]}
+                      {/* Status, time, then the branch or tag it landed on. */}
+                      <Text size="caption" dimColor wrap="truncate-end">
+                        {[d.at > 0 ? `${STATUS[d.answer]} ${hhmm(d.at)}` : STATUS[d.answer], d.ref].filter(Boolean).join('  ·  ')}
                       </Text>
                     </Box>
                   </Box>

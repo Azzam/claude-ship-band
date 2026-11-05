@@ -2,7 +2,8 @@
 // ponytail: regex heuristics on the command text; a mode's own `match` covers
 // project scripts (./deploy.sh). Tests and plain `run` are left out: too frequent.
 
-export type Found = { kind: string; title: string }
+// ref: the branch or tag a commit or push landed on, when the command or its output says.
+export type Found = { kind: string; title: string; ref?: string }
 
 // Flags git takes before its subcommand: -C path, -c key=value, --no-pager...
 const GIT = String.raw`\bgit\b(?:\s+-[Cc]\s+\S+|\s+--?[\w.-]+(?:=\S*)?)*\s+`
@@ -34,42 +35,71 @@ const BUILT: [string, RegExp][] = [
 const unquote = (s: string) => s.replace(/^['"]|['"]$/g, '')
 const base = (p: string) => p.replace(/\/+$/, '').split('/').pop() || p
 
-// The folder a command works in: git -C, then cd, then gh -R, else the session's.
-const repoOf = (cmd: string, cwd: string) => {
+// The folder a command works in: git -C, then cd, else the session's.
+const folderOf = (cmd: string, cwd: string) => {
   // Simple VAR=value assignments in the same command, so `cd $D` resolves.
   const vars: Record<string, string> = {}
   for (const m of cmd.matchAll(/(?:^|[\s;&])([A-Za-z_]\w*)=([^\s;&|'"]+)/g)) vars[m[1]!] = m[2]!
   const expand = (s: string) => s.replace(/\$\{?(\w+)\}?/g, (all, v: string) => vars[v] ?? all)
   const path =
     cmd.match(/\bgit\s+-C\s+("[^"]+"|'[^']+'|\S+)/)?.[1] ??
-    cmd.match(/(?:^|[;&|]\s*)cd\s+("[^"]+"|'[^']+'|[^\s;&|]+)/)?.[1] ??
-    cmd.match(/\s(?:-R|--repo)[\s=]+([\w.-]+\/[\w.-]+)/)?.[1]
+    cmd.match(/(?:^|[;&|]\s*)cd\s+("[^"]+"|'[^']+'|[^\s;&|]+)/)?.[1]
   const p = path ? expand(unquote(path)) : ''
   return p && !p.includes('$') ? base(p) : base(cwd) || 'this folder'
 }
 
+// gh's -R names the GitHub repo; it applies to gh steps only, not to a git push beside them.
+const ghRepoOf = (cmd: string) => cmd.match(/\s(?:-R|--repo)[\s=]+[\w.-]+\/([\w.-]+)/)?.[1]
+
+// What git printed: the branch of a commit ("[main 1a2b3c4] msg") and the refs a
+// push updated (" * [new branch]  v2 -> v2", "   1a2b3c4..5d6e7f8  main -> main").
+// A rejected push ("! [rejected]") updated nothing.
+const committedOn = (out: string) => out.match(/^\[([^\s\]]+)(?: \([\w-]+\))? [0-9a-f]{7,}\]/m)?.[1]
+const pushedIn = (out: string) =>
+  [...out.matchAll(/^\s*[*+]?\s*(?:\[new [\w ]+\]|[0-9a-f]{7,}\.{2,3}[0-9a-f]{7,})\s+\S+\s+->\s+(\S+)/gm)].map(m => m[1]!)
+// The command's own refspecs, when the output is cut off or silent: git push origin main v1.0.0.
+const pushArgs = (bare: string) =>
+  (bare.match(new RegExp(`${GIT}push\\b([^;&|\\n]*)`))?.[1] ?? '')
+    .split(/\s+/)
+    .filter(a => a && !a.startsWith('-') && !/[<>']/.test(a))
+    .slice(1)
+    .map(a => a.split(':').pop()!)
+    .filter(a => a && a !== 'HEAD')
+
 const deviceOf = (cmd: string) =>
   /simctl/.test(cmd) ? 'Simulator' : /devicectl|ios-deploy/.test(cmd) ? 'iPhone' : /run[:-]ios/.test(cmd) ? 'iOS' : 'Android'
 
-export const detect = (cmd: string, cwd: string, custom: [string, RegExp][] = []): Found[] => {
+// out: what the command printed, when known; it names branches, tags and PR numbers.
+export const detect = (cmd: string, cwd: string, custom: [string, RegExp][] = [], out = ''): Found[] => {
   // Quoted text (commit messages, echo) never counts as a command.
   const bare = cmd.replace(/'[^']*'|"[^"]*"/g, "''")
-  const repo = repoOf(cmd, cwd)
+  const repo = folderOf(cmd, cwd)
+  const gh = ghRepoOf(cmd) ?? repo
+  const pushed = [...new Set(pushedIn(out).length ? pushedIn(out) : pushArgs(bare))]
   const found: Found[] = []
   for (const [kind, re] of [...BUILT, ...custom]) {
     // A mode's own match for a built-in kind (deploy: ./deploy.sh) adds no second step.
     if (found.some(f => f.kind === kind) || !re.test(bare)) continue
     let title = repo
-    if (kind === 'merge') {
+    let ref: string | undefined
+    if (kind === 'commit') {
+      // git commit -q prints nothing: the branch the same command pushes stands in.
+      ref = committedOn(out) ?? pushed[0]
+    } else if (kind === 'push') {
+      ref = pushed.join(', ') || undefined
+    } else if (kind === 'pr') {
+      const n = out.match(/\/pull\/(\d+)\b/)?.[1]
+      title = n ? `${gh} #${n}` : gh
+    } else if (kind === 'merge') {
       const n = cmd.match(/\bgh\s+pr\s+merge\s+#?(\d+)/)?.[1]
-      if (n) title = `${repo} #${n}`
+      title = n ? `${gh} #${n}` : /\bgh\s+pr\s+merge\b/.test(bare) ? gh : repo
     } else if (kind === 'release') {
       const tag = cmd.match(/\bgh\s+release\s+create\s+([^\s'"]+)/)?.[1]
-      if (tag) title = `${repo} ${tag}`
+      title = tag ? `${gh} ${tag}` : gh
     } else if (kind === 'device') {
       title = deviceOf(bare)
     }
-    found.push({ kind, title })
+    found.push(ref ? { kind, title, ref } : { kind, title })
   }
   return found
 }

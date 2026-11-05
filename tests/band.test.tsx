@@ -176,6 +176,7 @@ test('a reopened session rebuilds its report from what was saved and from its tr
           { tool_use_id: 't1', tool: 'Bash', input: { command: 'gh pr merge 12 -R me/shop' }, text: 'ok' },
           { tool_use_id: 't2', tool: 'Bash', input: { command: 'vercel --prod' }, text: 'err', isError: true },
           { tool_use_id: 't3', tool: 'Read', input: { file_path: 'git push' }, text: 'ok' },
+          { tool_use_id: 't4', tool: 'Bash', input: { command: 'git push' }, text: '   1a2b3c4..5d6e7f8  main -> main' },
         ],
       },
     ],
@@ -183,9 +184,11 @@ test('a reopened session rebuilds its report from what was saved and from its tr
   await $.session.start({ cwd: '/w/my-app', surface: 'desktop', isInteractive: true })
 
   const ui = await $.ui.mount({ ...BAND, surface: 'desktop' })
-  expect((await ui.find({ type: 'Text', text: /This session/ }))?.text).toBe('This session  ✓ 1  ✕ 0  ·  1 ran')
-  expect((await ui.find({ type: 'Text', text: /my-app/ }))?.text).toBe('commit  my-app')
+  expect((await ui.find({ type: 'Text', text: /This session/ }))?.text).toBe('This session  ✓ 1  ✕ 0  ·  2 ran')
+  expect(await ui.find({ type: 'Text', text: /^commit {2}my-app$/ })).toBeDefined()
   expect((await ui.find({ type: 'Text', text: /shop/ }))?.text).toBe('merge  shop #12')
+  // The transcript keeps what git printed: the branch the push updated.
+  expect(await ui.find({ type: 'Text', text: /^ran {2}· {2}main$/ })).toBeDefined()
   // Only the transcript knows the merge: no time for it.
   expect(await ui.find({ type: 'Text', text: /^ran$/ })).toBeDefined()
   expect(await ui.find({ type: 'Text', text: /vercel|deploy/ })).toBeUndefined()
@@ -223,4 +226,57 @@ test('report settings: how many, one column, auto-detect off', async ($, on) => 
   expect((await ui.find({ type: 'Text', text: /This session/ }))?.text).toBe('This session  ✓ 0  ✕ 1')
   expect(await ui.find({ type: 'Text', text: /^commit/ })).toBeUndefined()
   await ui.unmount()
+})
+
+test('each commit and push shows the branch or tag it landed on', async ($, on) => {
+  engine(on)
+  mock.clock(on)
+  // What git printed for each call, as the model read it.
+  const OUT: Record<string, string> = {
+    r1: "38385a9 v1\nTo https://github.com/me/xplayer.git\n * [new branch]      main -> main\nbranch 'main' set up to track 'origin/main'.",
+    r2: 'To https://github.com/me/xplayer.git\n * [new tag]         v1.0.0 -> v1.0.0\nhttps://github.com/me/xplayer/releases/tag/v1.0.0',
+    r3: '[version2 940d035] v2\n 3 files changed\nTo https://github.com/me/xplayer.git\n   38385a9..940d035  version2 -> version2',
+    r4: 'https://github.com/me/xplayer/pull/7',
+    r6: ' ! [rejected]        main -> main (fetch first)',
+  }
+  on('tool.call', (_, e) => ({ result: { stdout: '', stderr: '' }, text: OUT[e.tool_use_id] ?? '' }))
+  await $.session.start({ cwd: '/w/LG-TV', surface: 'desktop', isInteractive: true })
+  await $.tool.call({ tool: 'mcp__ship-band__edit_modes', settings: { show: 12 } })
+
+  // git commit -q prints no branch: the push in the same command names it.
+  await $.tool.call(bash('git commit -q -m "v1" && git -c credential.helper= -c "credential.helper=!f() { echo x; }; f" push -u origin main 2>&1 | tail -4', 'r1'))
+  // A tag push; gh's --repo names the release, not the push beside it.
+  await $.tool.call(bash('git tag -a v1.0.0 -m "v1" && git push origin v1.0.0 2>&1 | tail -2 && gh release create v1.0.0 --repo me/xplayer', 'r2'))
+  await $.tool.call(bash('git commit -m "v2" && git push -u origin version2', 'r3'))
+  await $.tool.call(bash('gh pr create --fill', 'r4'))
+  // Nothing printed: the command's own refspec.
+  await $.tool.call(bash('git push origin HEAD:release-1', 'r5'))
+  // Rejected, though tail hid the exit code: no branch to claim.
+  await $.tool.call(bash('git push 2>&1 | tail -1', 'r6'))
+
+  const ui = await $.ui.mount({ ...BAND, surface: 'desktop' })
+  expect(await ui.findAll({ type: 'Text', text: /^commit {2}LG-TV$/ })).toHaveLength(2)
+  expect(await ui.findAll({ type: 'Text', text: /^push {2}LG-TV$/ })).toHaveLength(5)
+  expect(await ui.find({ type: 'Text', text: /^release {2}xplayer v1\.0\.0$/ })).toBeDefined()
+  expect(await ui.find({ type: 'Text', text: /^open PR {2}LG-TV #7$/ })).toBeDefined()
+  expect(await ui.findAll({ type: 'Text', text: /^ran(?: \d\d:\d\d)? {2}· {2}main$/ })).toHaveLength(2)
+  expect(await ui.findAll({ type: 'Text', text: /· {2}version2$/ })).toHaveLength(2)
+  expect(await ui.findAll({ type: 'Text', text: /· {2}v1\.0\.0$/ })).toHaveLength(1)
+  expect(await ui.findAll({ type: 'Text', text: /· {2}release-1$/ })).toHaveLength(1)
+  expect(await ui.findAll({ type: 'Text', text: /^ran(?: \d\d:\d\d)?$/ })).toHaveLength(3)
+  await ui.unmount()
+})
+
+test('an empty session shows one quiet line; a step replaces it', async ($, on) => {
+  engine(on)
+  await $.session.start({ cwd: '/', surface: 'desktop', isInteractive: true })
+  const ui = await $.ui.mount({ ...BAND, surface: 'desktop' })
+  expect((await ui.find({ type: 'Text', text: /no steps yet/ }))?.text).toBe('This session  ·  no steps yet')
+  await ui.unmount()
+
+  await $.tool.call({ tool: 'mcp__ship-band__offer_actions', actions: [{ kind: 'commit', title: 'my-app' }] })
+  const term = await $.ui.mount({ ...BAND, surface: 'terminal' })
+  expect(await term.find({ type: 'Text', text: /no steps yet/ })).toBeUndefined()
+  expect(await term.findAll({ type: 'Button' })).toHaveLength(2)
+  await term.unmount()
 })

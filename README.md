@@ -41,7 +41,9 @@ Under the open steps, **This session** lists what happened, in two columns:
 | red ✕ | skipped | You pressed No. The icon is faded. |
 | grey ✓ | ran | Claude ran it without the panel (a successful `git commit`, `git push`, `gh pr create` or `merge`, `gh release create`, a publish, a deploy, a device install or a migration). |
 
-Each item shows the action in its mode's colour, the target, the status and the time. The header counts all of them, for example **This session ✓ 4 ✕ 1 · 3 ran · +2 earlier**. The newest 6 show; older ones are counted as **earlier**. A terminal, which draws no pictures, shows a coloured dot with ✓ or ✕ in place of each icon.
+Each item shows the action in its mode's colour, the target, the status, the time, and the branch or tag it landed on (**ran 14:12 · v0.3.0**). The target is the folder the command ran in; for a PR, merge or release, gh's `--repo` names it. The branch comes from git's own output (`[main 1a2b3c4]`, `main -> main`), or from the command (`git push origin main`) when the output is cut off; a `git commit -q` takes the branch its command pushes. A rejected push names no branch. So two commits to the same folder read as two steps: **commit my-app · main** and later **commit my-app · version2**.
+
+The header counts all of them, for example **This session ✓ 4 ✕ 1 · 3 ran · +2 earlier**. The newest 6 show; older ones are counted as **earlier**. Before anything happens, the band shows one quiet line, **This session · no steps yet**, so you can see the mod is loaded. A terminal, which draws no pictures, shows a coloured dot with ✓ or ✕ in place of each icon.
 
 The report is kept per session. Reopen or resume a session and its report comes back: your answers are saved, and what Claude ran is rebuilt from that session's own transcript. Steps found only in the transcript have no time, because the transcript records none.
 
@@ -115,13 +117,13 @@ Requires a Claude Code build with mod (function hook) support; built and tested 
 | [`hooks/detect.ts`](hooks/detect.ts) | Finds shipping steps in a shell command. Quoted text (commit messages, `echo`) never counts. |
 | `offer_actions` tool | `mcp__ship-band__offer_actions`. Claude calls it with up to 6 rows: `kind` (a mode), a `title` naming only the target, a short `detail`. Each call replaces the open rows; the report stays. |
 | `edit_modes` tool | `mcp__ship-band__edit_modes`. Claude calls it only when you ask to change modes or report settings. |
-| Bash watcher | A `tool.call` hook on Bash: after a command succeeds, a shipping step it contains joins the report, or completes the approved step of the same kind. |
+| Bash watcher | A `tool.call` hook on Bash: after a command succeeds, a shipping step it contains joins the report, with the branch or tag from its output, or completes the approved step of the same kind. |
 | Band | A `ui.render` hook on `AbovePrompt` draws the open rows and the report, and gives way to surveys. |
 
 ## Data and privacy
 
 - **Stored on your machine**, in the mod's own Claude Code store: your modes, the report settings, and each session's answers and detected steps, keyed by session id, for the newest 50 sessions.
-- **Read on your machine**: the current session's transcript, when a session starts, to rebuild its report.
+- **Read on your machine**: the current session's transcript, when a session starts, to rebuild its report, and the output of each shell command Claude runs, for branch and tag names. Only the step, its target and its branch or tag are kept.
 - **Never**: network calls, model calls, or running commands. Building the report costs no tokens. The only token cost is the `offer_actions` tool description, sent with each request like any tool's.
 
 ## Develop

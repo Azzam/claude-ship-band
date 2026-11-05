@@ -14,11 +14,11 @@ When Claude finishes work that needs a commit, a push, a pull request, a deploy,
 
 **Light**
 
-![ship-band in light mode: an open verify step with No and Yes buttons, and below it the two-column session report, each step with an icon, a yes, no or ran badge, its action, target, status and time](docs/band-light.png)
+![ship-band in light mode: an open verify step with No and Yes buttons, and below it the two-column session report, one row per action, each with an icon, a yes, no or ran badge, its targets, a count for repeats, its status, time and branches](docs/band-light.png)
 
 **Dark**
 
-![ship-band in dark mode: an open verify step with No and Yes buttons, and below it the two-column session report, each step with an icon, a yes, no or ran badge, its action, target, status and time](docs/band-dark.png)
+![ship-band in dark mode: an open verify step with No and Yes buttons, and below it the two-column session report, one row per action, each with an icon, a yes, no or ran badge, its targets, a count for repeats, its status, time and branches](docs/band-dark.png)
 
 <sub>Previews drawn from the mod's own icons and colours; buttons and the prompt box follow your Claude app's own style.</sub>
 
@@ -33,7 +33,7 @@ ship-band is an **approval interface**, not a guard:
 
 ## The session report
 
-Under the open steps, **This session** lists what happened, in two columns:
+Under the open steps, **This session** lists what happened, in two columns, one row per action:
 
 | Badge | Status | Meaning |
 | --- | --- | --- |
@@ -41,9 +41,11 @@ Under the open steps, **This session** lists what happened, in two columns:
 | red ✕ | skipped | You pressed No. The icon is faded. |
 | grey ✓ | ran | Claude ran it without the panel (a successful `git commit`, `git push`, `gh pr create` or `merge`, `gh release create`, a publish, a deploy, a device install or a migration). |
 
-Each item shows the action in its mode's colour, the target, the status, the time, and the branch or tag it landed on (**ran 14:12 · v0.3.0**). The target is the folder the command ran in; for a PR, merge or release, gh's `--repo` names it. The branch comes from git's own output (`[main 1a2b3c4]`, `main -> main`), or from the command (`git push origin main`) when the output is cut off; a `git commit -q` takes the branch its command pushes. A rejected push names no branch. So two commits to the same folder read as two steps: **commit my-app · main** and later **commit my-app · version2**.
+Each action gets one row, however often it ran. Four commits across two folders show once, as **commit shop, my-app ×4**. The row shows the action in its mode's colour, its targets newest first, how many steps, the latest step's badge, status and time, and every branch or tag the steps landed on, newest first (**ran 17:52 · main, version2**). Rows follow their latest step, so the newest work sits last. To list every step on its own row instead, turn grouping off (see [Customize](#customize)).
 
-The header counts all of them, for example **This session ✓ 4 ✕ 1 · 3 ran · +2 earlier**. The newest 6 show; older ones are counted as **earlier**. Before anything happens, the band shows one quiet line, **This session · no steps yet**, so you can see the mod is loaded. A terminal, which draws no pictures, shows a coloured dot with ✓ or ✕ in place of each icon.
+The target is the folder the command ran in; for a PR, merge or release, gh's `--repo` names it. The branch comes from git's own output (`[main 1a2b3c4]`, `main -> main`), or from the command (`git push origin main`) when the output is cut off; a `git commit -q` takes the branch its command pushes. A rejected push names no branch.
+
+The header counts every step, for example **This session ✓ 4 ✕ 1 · 4 ran · +1 earlier**. The newest 6 rows show; older rows are counted as **earlier**. Before anything happens, the band shows one quiet line, **This session · no steps yet**, so you can see the mod is loaded. A terminal, which draws no pictures, shows a coloured dot with ✓ or ✕ in place of each icon.
 
 The report is kept per session. Reopen or resume a session and its report comes back: your answers are saved, and what Claude ran is rebuilt from that session's own transcript. Steps found only in the transcript have no time, because the transcript records none.
 
@@ -82,9 +84,10 @@ Icons: `commit`, `upload`, `pull-request`, `merge`, `shield-check`, `rocket`, `t
 
 **The report**:
 
-- "Show 10 steps in the ship-band report." (2 to 12, default 6)
+- "Show 10 rows in the ship-band report." (2 to 12, default 6)
 - "Use one column for the report." (1 or 2, default 2)
 - "Turn off ship-band auto-detect." Only your Yes and No answers are reported then.
+- "Show every step in the ship-band report." Turns grouping off: each commit or push gets its own row. Default on: one row per action.
 
 ## Install
 

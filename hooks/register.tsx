@@ -37,15 +37,15 @@ const EDIT =
   'add: each {name (lowercase, a-z 0-9 -), label (the verb shown), icon, color (#rrggbb), hint (when to use it), match (optional regex for a shell command that does this step, such as "\\./deploy\\.sh", so the session report counts it when Claude runs it)}; giving a built-in name changes that built-in. ' +
   'remove: names; a removed built-in goes back to its default. ' +
   `Built-ins: ${Object.keys(BUILT_IN).join(', ')}. Icons: ${Object.keys(ICONS).join(', ')}. ` +
-  'settings: {show (2-12 steps in the session report, default 6), columns (1 or 2, default 2), detect (true: also report commits, pushes, PRs, deploys Claude ran without the panel; default true)}. ' +
+  'settings: {show (2-12 rows in the session report, default 6), columns (1 or 2, default 2), detect (true: also report commits, pushes, PRs, deploys Claude ran without the panel; default true), group (true: one row per action, with its targets and a count; false: every step on its own row; default true)}. ' +
   'Kept across sessions. Returns the modes and settings now in use.'
 
 // Reset on each load of the module; session.start fills it from the store.
 let modes: Record<string, Mode> = { ...BUILT_IN }
 
 // The session report's own settings, kept across sessions like the modes.
-type Settings = { show: number; columns: 1 | 2; detect: boolean }
-const DEFAULTS: Settings = { show: 6, columns: 2, detect: true }
+type Settings = { show: number; columns: 1 | 2; detect: boolean; group: boolean }
+const DEFAULTS: Settings = { show: 6, columns: 2, detect: true, group: true }
 const SETTINGS_KEY = 'settings'
 let settings: Settings = { ...DEFAULTS }
 const cleanSettings = (v: unknown): Settings => {
@@ -54,6 +54,7 @@ const cleanSettings = (v: unknown): Settings => {
     show: Number.isInteger(o.show) ? Math.min(12, Math.max(2, o.show as number)) : DEFAULTS.show,
     columns: o.columns === 1 ? 1 : 2,
     detect: typeof o.detect === 'boolean' ? o.detect : DEFAULTS.detect,
+    group: typeof o.group === 'boolean' ? o.group : DEFAULTS.group,
   }
 }
 
@@ -202,6 +203,7 @@ export const register: Register = on => {
               show: { type: 'integer', minimum: 2, maximum: 12 },
               columns: { enum: [1, 2] },
               detect: { type: 'boolean' },
+              group: { type: 'boolean' },
             },
           },
         },
@@ -269,7 +271,8 @@ export const register: Register = on => {
     return {
       result:
         `${skipped.length ? `Skipped bad names: ${skipped.join(', ')}. ` : ''}Modes now:\n${now.join('\n')}\n` +
-        `Report: show ${settings.show}, ${settings.columns} column(s), auto-detect ${settings.detect ? 'on' : 'off'}`,
+        `Report: show ${settings.show}, ${settings.columns} column(s), auto-detect ${settings.detect ? 'on' : 'off'}, ` +
+        `group repeats ${settings.group ? 'on' : 'off'}`,
     }
   }).catch(() => ({ deny: 'ship-band could not save the modes.' }))
 
@@ -317,8 +320,23 @@ export const register: Register = on => {
     const skippedN = done.filter(d => d.answer === 'no').length
     const ranN = done.length - approved - skippedN
     const STATUS = { yes: 'approved', no: 'skipped', ran: 'ran' } as const
-    const shown = done.slice(-settings.show)
-    const earlier = done.length - shown.length
+    // One row per action: its targets, branches and tags newest first, how many
+    // steps, and the latest step's status and time. Raw steps stay in history.
+    type Row = { last: Done; n: number; titles: string[]; refs: string[] }
+    const newest = (list: string[], v: string) => [v, ...list.filter(x => x !== v)]
+    const rows = new Map<string, Row>()
+    for (const d of done) {
+      const key = settings.group ? d.kind : d.id
+      const row = rows.get(key) ?? { last: d, n: 0, titles: [], refs: [] }
+      rows.delete(key) // re-inserted last: rows stay in order of their latest step
+      row.last = d
+      row.n++
+      row.titles = newest(row.titles, d.title)
+      for (const r of d.ref?.split(', ') ?? []) row.refs = newest(row.refs, r)
+      rows.set(key, row)
+    }
+    const shown = [...rows.values()].slice(-settings.show)
+    const earlier = rows.size - shown.length
 
     return (
       <Box flexDirection="column" rowGap="md" paddingX={1}>
@@ -393,7 +411,7 @@ export const register: Register = on => {
             </Text>
             {/* Two columns: badged icon, then action and target on one line, status and time under. */}
             <Box flexDirection="row" flexWrap="wrap" rowGap="sm">
-              {shown.map(d => {
+              {shown.map(({ last: d, n, titles, refs }) => {
                 const m = modeOf(d.kind)
                 const skipped = d.answer === 'no'
                 return (
@@ -402,7 +420,7 @@ export const register: Register = on => {
                       {svg ? (
                         <ui.Svg
                           source={badged(m, d.answer)}
-                          alt={`${m.label} ${d.title}: ${STATUS[d.answer]}`}
+                          alt={`${m.label} ${titles.join(', ')}: ${STATUS[d.answer]}`}
                           width={36}
                           height={36}
                         />
@@ -430,12 +448,15 @@ export const register: Register = on => {
                         )}
                         {'  '}
                         <Text weight="medium" dimColor={skipped}>
-                          {d.title}
+                          {titles.join(', ')}
                         </Text>
+                        {n > 1 ? <Text dimColor>{` ×${n}`}</Text> : null}
                       </Text>
-                      {/* Status, time, then the branch or tag it landed on. */}
+                      {/* Status, time, then the branch or tag it landed on. Single spaces: the
+                          desktop draws a string with a run of spaces in a monospace face. */}
                       <Text size="caption" dimColor wrap="truncate-end">
-                        {[d.at > 0 ? `${STATUS[d.answer]} ${hhmm(d.at)}` : STATUS[d.answer], d.ref].filter(Boolean).join('  ·  ')}
+                        {d.at > 0 ? `${STATUS[d.answer]} ${hhmm(d.at)}` : STATUS[d.answer]}
+                        {refs.length > 0 ? <Text>{` · ${refs.join(', ')}`}</Text> : null}
                       </Text>
                     </Box>
                   </Box>

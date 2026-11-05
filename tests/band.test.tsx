@@ -80,6 +80,8 @@ test('the strip shows the newest 6 and counts the rest as earlier', async ($, on
   engine(on)
   mock.clock(on)
   await $.session.start({ cwd: '/', surface: 'desktop', isInteractive: true })
+  // Every step on its own row: seven runs, not one.
+  await $.tool.call({ tool: 'mcp__ship-band__edit_modes', settings: { group: false } })
   await $.tool.call({
     tool: 'mcp__ship-band__offer_actions',
     actions: ['a', 'b', 'c', 'd', 'e', 'f', 'g'].map(t => ({ kind: 'run', title: `job-${t}` })),
@@ -188,7 +190,7 @@ test('a reopened session rebuilds its report from what was saved and from its tr
   expect(await ui.find({ type: 'Text', text: /^commit {2}my-app$/ })).toBeDefined()
   expect((await ui.find({ type: 'Text', text: /shop/ }))?.text).toBe('merge  shop #12')
   // The transcript keeps what git printed: the branch the push updated.
-  expect(await ui.find({ type: 'Text', text: /^ran {2}· {2}main$/ })).toBeDefined()
+  expect(await ui.find({ type: 'Text', text: /^ran · main$/ })).toBeDefined()
   // Only the transcript knows the merge: no time for it.
   expect(await ui.find({ type: 'Text', text: /^ran$/ })).toBeDefined()
   expect(await ui.find({ type: 'Text', text: /vercel|deploy/ })).toBeUndefined()
@@ -205,7 +207,9 @@ test('a mode with its own match counts the project script, once', async ($, on) 
   await $.tool.call(bash('vercel --prod && ./deploy.sh', 'd2'))
   const ui = await $.ui.mount({ ...BAND, surface: 'desktop' })
   expect((await ui.find({ type: 'Text', text: /This session/ }))?.text).toBe('This session  ✓ 0  ✕ 0  ·  2 ran')
-  expect(await ui.findAll({ type: 'Text', text: /^deploy {2}api$/ })).toHaveLength(2)
+  // Grouped: one row for the two deploys of api.
+  expect(await ui.findAll({ type: 'Text', text: /^deploy {2}api/ })).toHaveLength(1)
+  expect((await ui.find({ type: 'Text', text: /^deploy {2}api/ }))?.text).toBe('deploy  api ×2')
   await ui.unmount()
 })
 
@@ -217,7 +221,7 @@ test('report settings: how many, one column, auto-detect off', async ($, on) => 
   const r = JSON.stringify(
     await $.tool.call({ tool: 'mcp__ship-band__edit_modes', settings: { show: 99, columns: 1, detect: false } }),
   )
-  expect(r).toContain('Report: show 12, 1 column(s), auto-detect off')
+  expect(r).toContain('Report: show 12, 1 column(s), auto-detect off, group repeats on')
   await $.tool.call(bash('git commit -m x && git push', 'c1'))
   await $.tool.call({ tool: 'mcp__ship-band__offer_actions', actions: [{ kind: 'deploy', title: 'api' }] })
   const ui = await $.ui.mount({ ...BAND, surface: 'desktop' })
@@ -241,7 +245,8 @@ test('each commit and push shows the branch or tag it landed on', async ($, on) 
   }
   on('tool.call', (_, e) => ({ result: { stdout: '', stderr: '' }, text: OUT[e.tool_use_id] ?? '' }))
   await $.session.start({ cwd: '/w/LG-TV', surface: 'desktop', isInteractive: true })
-  await $.tool.call({ tool: 'mcp__ship-band__edit_modes', settings: { show: 12 } })
+  // Every step on its own row, to see each one's branch.
+  await $.tool.call({ tool: 'mcp__ship-band__edit_modes', settings: { show: 12, group: false } })
 
   // git commit -q prints no branch: the push in the same command names it.
   await $.tool.call(bash('git commit -q -m "v1" && git -c credential.helper= -c "credential.helper=!f() { echo x; }; f" push -u origin main 2>&1 | tail -4', 'r1'))
@@ -259,10 +264,10 @@ test('each commit and push shows the branch or tag it landed on', async ($, on) 
   expect(await ui.findAll({ type: 'Text', text: /^push {2}LG-TV$/ })).toHaveLength(5)
   expect(await ui.find({ type: 'Text', text: /^release {2}xplayer v1\.0\.0$/ })).toBeDefined()
   expect(await ui.find({ type: 'Text', text: /^open PR {2}LG-TV #7$/ })).toBeDefined()
-  expect(await ui.findAll({ type: 'Text', text: /^ran(?: \d\d:\d\d)? {2}· {2}main$/ })).toHaveLength(2)
-  expect(await ui.findAll({ type: 'Text', text: /· {2}version2$/ })).toHaveLength(2)
-  expect(await ui.findAll({ type: 'Text', text: /· {2}v1\.0\.0$/ })).toHaveLength(1)
-  expect(await ui.findAll({ type: 'Text', text: /· {2}release-1$/ })).toHaveLength(1)
+  expect(await ui.findAll({ type: 'Text', text: /^ran(?: \d\d:\d\d)? · main$/ })).toHaveLength(2)
+  expect(await ui.findAll({ type: 'Text', text: /^ran(?: \d\d:\d\d)? · version2$/ })).toHaveLength(2)
+  expect(await ui.findAll({ type: 'Text', text: /^ran(?: \d\d:\d\d)? · v1\.0\.0$/ })).toHaveLength(1)
+  expect(await ui.findAll({ type: 'Text', text: /^ran(?: \d\d:\d\d)? · release-1$/ })).toHaveLength(1)
   expect(await ui.findAll({ type: 'Text', text: /^ran(?: \d\d:\d\d)?$/ })).toHaveLength(3)
   await ui.unmount()
 })
@@ -279,4 +284,36 @@ test('an empty session shows one quiet line; a step replaces it', async ($, on) 
   expect(await term.find({ type: 'Text', text: /no steps yet/ })).toBeUndefined()
   expect(await term.findAll({ type: 'Button' })).toHaveLength(2)
   await term.unmount()
+})
+
+test('one row per action: its targets, a count, the latest status, every branch newest first', async ($, on) => {
+  engine(on)
+  mock.clock(on)
+  const OUT: Record<string, string> = {
+    g1: '[main 1a2b3c4] a\n   0a0a0a0..1a2b3c4  main -> main',
+    g2: '[version2 5d6e7f8] b\n * [new branch]      version2 -> version2',
+    g3: '[main 9a9a9a9] c\n   1a2b3c4..9a9a9a9  main -> main',
+    g4: '[main 0b0b0b0] d',
+  }
+  on('tool.call', (_, e) => ({ result: { stdout: '', stderr: '' }, text: OUT[e.tool_use_id] ?? '' }))
+  await $.session.start({ cwd: '/w/LG-TV', surface: 'desktop', isInteractive: true })
+  await $.tool.call(bash('git commit -m a && git push', 'g1'))
+  await $.tool.call(bash('git commit -m b && git push -u origin version2', 'g2'))
+  await $.tool.call({ tool: 'mcp__ship-band__offer_actions', actions: [{ kind: 'deploy', title: 'tv' }] })
+  const ui = await $.ui.mount({ ...BAND, surface: 'desktop' })
+  await ui.press({ key: 'n-0:deploy:tv' })
+  await $.tool.call(bash('git commit -m c && git push', 'g3'))
+  // Another folder: still the one commit row.
+  await $.tool.call(bash('git -C /w/shop commit -m d', 'g4'))
+
+  // Seven steps, three rows; the header still counts every step.
+  expect((await ui.find({ type: 'Text', text: /This session/ }))?.text).toBe('This session  ✓ 0  ✕ 1  ·  7 ran')
+  expect(await ui.findAll({ type: 'Text', text: /^commit {2}/ })).toHaveLength(1)
+  expect(await ui.findAll({ type: 'Text', text: /^push {2}/ })).toHaveLength(1)
+  expect(await ui.findAll({ type: 'Text', text: /^ran(?: \d\d:\d\d)? · main, version2$/ })).toHaveLength(2)
+  // Rows follow their latest step; targets read newest first.
+  const titles = (await ui.findAll({ type: 'Text', text: /^(?:commit|push|deploy) {2}/ })).map(t => t.text)
+  expect(titles).toEqual(['deploy  tv', 'push  LG-TV ×3', 'commit  shop, LG-TV ×4'])
+  expect(await ui.findAll({ type: 'Svg' })).toHaveLength(3)
+  await ui.unmount()
 })
